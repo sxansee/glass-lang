@@ -1,0 +1,28 @@
+fn factorial(n: int) -> int {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+fn fibonacci(n: int) -> int {
+    let a = 0
+    let b = 1
+    for i in 0..n {
+        let temp = a + b
+        a = b
+        b = temp
+    }
+    return a
+}
+
+fn main() {
+    print(factorial(5))
+    print(fibonacci(10))
+
+    let sum = 0
+    for i in 0..10 {
+        sum += i
+    }
+    print(sum)
+}

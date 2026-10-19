@@ -1,0 +1,19 @@
+# В репозитории — LF. При checkout Git сам подставляет CRLF там, где это безопасно.
+* text=auto
+
+# LF обязателен независимо от ОС: скрипты, workflow, исходники Glass (тесты сравнивают вывод с "\n").
+*.sh    text eol=lf
+*.glass text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Windows-файлы — CRLF.
+*.ps1   text eol=crlf
+*.sln   text eol=crlf
+
+# Бинарные файлы.
+*.png   binary
+*.ico   binary
+*.zip   binary
+*.dll   binary
+*.exe   binary

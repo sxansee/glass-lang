@@ -1,0 +1,41 @@
+facet Shape {
+    fn area() -> double;
+}
+
+mold Circle : Shape {
+    let radius: double
+
+    Circle(r: double) {
+        radius = r
+    }
+
+    fn area() -> double {
+        return radius * radius * 3
+    }
+}
+
+mold Square : Shape {
+    let side: double
+
+    Square(s: double) {
+        side = s
+    }
+
+    fn area() -> double {
+        return side * side
+    }
+}
+
+fn printArea(s: Shape) {
+    print(s.area())
+}
+
+fn main() {
+    let c = Circle(3.0)
+    let sq = Square(4.0)
+
+    // Один и тот же вызов area() через Shape — разная реализация
+    // в зависимости от реального класса объекта. Это и есть vtable.
+    printArea(c)
+    printArea(sq)
+}

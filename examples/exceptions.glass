@@ -1,0 +1,44 @@
+mold NotFoundError : Exception {
+    let code: int
+
+    NotFoundError(msg: string, c: int) {
+        super(msg)
+        code = c
+    }
+}
+
+fn findUser(id: int) -> string {
+    if id == 1 {
+        return "Ада"
+    }
+    if id == 2 {
+        return "Грейс"
+    }
+    throw NotFoundError("пользователь не найден", id)
+}
+
+fn describeUser(id: int) -> string {
+    try {
+        return "нашёл: " + findUser(id)
+    } catch e: NotFoundError {
+        print(e.code)
+        return e.message
+    }
+}
+
+fn main() {
+    print(describeUser(1))
+    print(describeUser(2))
+    print(describeUser(42))
+
+    // catch по базовому Exception ловит и NotFoundError — это одна и та
+    // же mold-цепочка наследования, что и везде в языке: Exception не
+    // особый случай, а обычный mold (см. README).
+    try {
+        print(findUser(99))
+    } catch e: Exception {
+        print("поймано как Exception: " + e.message)
+    } finally {
+        print("finally выполняется всегда — и здесь, и при обычном return")
+    }
+}

@@ -1,0 +1,277 @@
+<UserControl x:Class="Glass.Studio.Views.ObjectInspectorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Glass.Studio.ViewModels;assembly=Glass.Studio.Core"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:ObjectInspectorViewModel}">
+
+    <!-- Инспектор объекта: «как он устроен в памяти». Раскладка и vtable приходят от VM теми же
+         функциями, что считают ~layout и ~vtable в самом языке, — картинка не может разойтись с
+         тем, что напечатает программа. DataContext — ObjectInspectorViewModel. -->
+    <UserControl.Resources>
+
+        <Style x:Key="TableHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="Margin" Value="0,0,16,4" />
+        </Style>
+
+        <Style x:Key="TableCell" TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
+            <Setter Property="Margin" Value="0,2,16,2" />
+        </Style>
+
+        <Style x:Key="TypeCell" TargetType="TextBlock" BasedOn="{StaticResource TableCell}">
+            <Setter Property="Foreground" Value="{StaticResource SlotRefBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="int">
+                    <Setter Property="Foreground" Value="{StaticResource SlotIntBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="double">
+                    <Setter Property="Foreground" Value="{StaticResource SlotDoubleBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="bool">
+                    <Setter Property="Foreground" Value="{StaticResource SlotBoolBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ValueCell" TargetType="TextBlock" BasedOn="{StaticResource TableCell}">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsReference}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource RefBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="TargetCell" TargetType="TextBlock" BasedOn="{StaticResource TableCell}">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsInherited}" Value="True">
+                    <Setter Property="FontWeight" Value="Normal" />
+                    <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Ячейка «карты слотов»: цвет — по типу поля -->
+        <Style x:Key="SlotChipStyle" TargetType="Border">
+            <Setter Property="Width" Value="78" />
+            <Setter Property="Height" Value="46" />
+            <Setter Property="Margin" Value="0,0,4,4" />
+            <Setter Property="Padding" Value="7,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="{StaticResource SlotRefBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Type}" Value="int">
+                    <Setter Property="Background" Value="{StaticResource SlotIntBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="double">
+                    <Setter Property="Background" Value="{StaticResource SlotDoubleBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Type}" Value="bool">
+                    <Setter Property="Background" Value="{StaticResource SlotBoolBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ObjectSectionStyle" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsObject}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ArraySectionStyle" TargetType="StackPanel">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsArray}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid>
+        <!-- Пока ничего не выбрано -->
+        <TextBlock Text="Выберите объект на схеме кучи или ссылочную переменную в таблице — здесь покажем, как он устроен в памяти: раскладку полей и таблицу виртуальных методов.">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource HintText}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasSelection}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <ScrollViewer.Style>
+                <Style TargetType="ScrollViewer">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasSelection}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ScrollViewer.Style>
+
+            <StackPanel Margin="14,10,14,14">
+                <TextBlock Text="{Binding Title}" FontSize="19" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                <TextBlock Text="{Binding AddressText}" Style="{StaticResource MonoMutedText}" TextWrapping="Wrap" Margin="0,2,0,0" />
+                <TextBlock Text="{Binding AncestryText}" Margin="0,4,0,0" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding AncestryText}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- Предупреждение: объект — мусор -->
+                <Border Margin="0,10,0,0" Padding="10,8" CornerRadius="4" BorderThickness="1"
+                        Background="{StaticResource GarbageSoftBrush}" BorderBrush="{StaticResource GarbageBrush}">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasNote}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding Note}" TextWrapping="Wrap" Foreground="{StaticResource GarbageBrush}" />
+                </Border>
+
+                <!-- ===== Объект: раскладка и vtable ===== -->
+                <StackPanel Style="{StaticResource ObjectSectionStyle}">
+                    <TextBlock Text="Раскладка полей в памяти" Style="{StaticResource SectionTitle}" />
+
+                    <ItemsControl ItemsSource="{Binding Fields}" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:FieldRow}">
+                                <Border Style="{StaticResource SlotChipStyle}" ToolTip="{Binding Type}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" Foreground="White" FontWeight="SemiBold" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding SlotText}" Foreground="#E6FFFFFF" FontSize="10.5" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding SizeSummary}" Style="{StaticResource MutedText}" Margin="0,2,0,8" />
+
+                    <StackPanel Grid.IsSharedSizeScope="True">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="FieldOffset" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="FieldName" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="FieldType" />
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="FieldSize" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Смещ." Style="{StaticResource TableHeader}" />
+                            <TextBlock Grid.Column="1" Text="Поле" Style="{StaticResource TableHeader}" />
+                            <TextBlock Grid.Column="2" Text="Тип" Style="{StaticResource TableHeader}" />
+                            <TextBlock Grid.Column="3" Text="Байт" Style="{StaticResource TableHeader}" />
+                            <TextBlock Grid.Column="4" Text="Значение" Style="{StaticResource TableHeader}" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Fields}" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:FieldRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="FieldOffset" />
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="FieldName" />
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="FieldType" />
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="FieldSize" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Offset, Mode=OneWay}" Style="{StaticResource TableCell}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" Style="{StaticResource TableCell}" FontWeight="SemiBold" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Type}" Style="{StaticResource TypeCell}" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Size, Mode=OneWay}" Style="{StaticResource TableCell}" />
+                                        <TextBlock Grid.Column="4" Text="{Binding ValueText}" Style="{StaticResource ValueCell}" TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <TextBlock Text="Таблица виртуальных методов (vtable)" Style="{StaticResource SectionTitle}" />
+                    <TextBlock TextWrapping="Wrap" Style="{StaticResource MutedText}" Margin="0,0,0,6"
+                               Text="Вызов x.метод() ищет метод по имени в vtable объекта и выполняет реализацию из правой колонки. Если класс объекта переопределил метод — выполнится его код, иначе — код предка." />
+                    <TextBlock Text="Виртуальных методов нет">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource MutedText}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding VTable.Count}" Value="0">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <StackPanel Grid.IsSharedSizeScope="True">
+                        <ItemsControl ItemsSource="{Binding VTable}" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:VTableRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="VMethod" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Method}" Style="{StaticResource TableCell}" />
+                                        <TextBlock Grid.Column="1" Text="→" Style="{StaticResource TableCell}" Foreground="{StaticResource MutedTextBrush}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Target}" Style="{StaticResource TargetCell}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- ===== Массив: элементы ===== -->
+                <StackPanel Style="{StaticResource ArraySectionStyle}">
+                    <TextBlock Text="Элементы массива" Style="{StaticResource SectionTitle}" />
+                    <StackPanel Grid.IsSharedSizeScope="True">
+                        <ItemsControl ItemsSource="{Binding Elements}" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:ElementRow}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" SharedSizeGroup="ElementIndex" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Index}" Style="{StaticResource TableCell}" Foreground="{StaticResource MutedTextBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding ValueText}" Style="{StaticResource ValueCell}" TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

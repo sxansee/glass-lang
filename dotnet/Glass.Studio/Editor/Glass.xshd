@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Подсветка синтаксиса Glass для AvalonEdit. Ключевые слова — ровно таблица Lexer.cpp
+     (keywordTable); блочных комментариев в языке нет, только //. -->
+<SyntaxDefinition name="Glass" extensions=".glass" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+    <Color name="Comment" foreground="#6A7A8C" fontStyle="italic" />
+    <Color name="String" foreground="#0F7B4F" />
+    <Color name="Number" foreground="#C2570C" />
+    <Color name="Declaration" foreground="#1D4ED8" fontWeight="bold" />
+    <Color name="Keyword" foreground="#1D4ED8" />
+    <Color name="Modifier" foreground="#7C3AED" />
+    <Color name="Type" foreground="#0E7490" fontWeight="bold" />
+    <Color name="Literal" foreground="#9333EA" fontWeight="bold" />
+    <Color name="SelfRef" foreground="#B45309" fontWeight="bold" />
+    <Color name="Introspection" foreground="#C026D3" fontWeight="bold" />
+    <Color name="Builtin" foreground="#0F766E" />
+
+    <RuleSet>
+        <Span color="Comment">
+            <Begin>//</Begin>
+        </Span>
+
+        <Span color="String">
+            <Begin>"</Begin>
+            <End>"</End>
+            <RuleSet>
+                <!-- экранированные символы: \n, \", \\ -->
+                <Span begin="\\" end="." />
+            </RuleSet>
+        </Span>
+
+        <!-- Фирменная фича языка: ~layout, ~vtable, ~address, ~heap, ~gc -->
+        <Rule color="Introspection">~\s*(layout|vtable|address|heap|gc)\b</Rule>
+
+        <Keywords color="Declaration">
+            <Word>mold</Word>
+            <Word>facet</Word>
+            <Word>fn</Word>
+            <Word>let</Word>
+        </Keywords>
+
+        <Keywords color="Modifier">
+            <Word>static</Word>
+            <Word>virtual</Word>
+            <Word>override</Word>
+            <Word>public</Word>
+            <Word>private</Word>
+            <Word>protected</Word>
+        </Keywords>
+
+        <Keywords color="Keyword">
+            <Word>if</Word>
+            <Word>else</Word>
+            <Word>while</Word>
+            <Word>for</Word>
+            <Word>in</Word>
+            <Word>return</Word>
+            <Word>break</Word>
+            <Word>continue</Word>
+            <Word>try</Word>
+            <Word>catch</Word>
+            <Word>finally</Word>
+            <Word>throw</Word>
+        </Keywords>
+
+        <Keywords color="Type">
+            <Word>int</Word>
+            <Word>double</Word>
+            <Word>bool</Word>
+            <Word>string</Word>
+        </Keywords>
+
+        <Keywords color="Literal">
+            <Word>true</Word>
+            <Word>false</Word>
+            <Word>null</Word>
+        </Keywords>
+
+        <Keywords color="SelfRef">
+            <Word>this</Word>
+            <Word>super</Word>
+        </Keywords>
+
+        <!-- Встроенные функции и константы (список сверяется тестом с bytecode/Builtins.h) -->
+        <Keywords color="Builtin">
+            <Word>print</Word>
+            <Word>len</Word>
+            <Word>str</Word>
+            <Word>range</Word>
+            <Word>abs</Word>
+            <Word>min</Word>
+            <Word>max</Word>
+            <Word>sum</Word>
+            <Word>sqrt</Word>
+            <Word>pow</Word>
+            <Word>floor</Word>
+            <Word>ceil</Word>
+            <Word>round</Word>
+            <Word>PI</Word>
+            <Word>E</Word>
+        </Keywords>
+
+        <Rule color="Number">\b\d+(\.\d+)?([eE][+-]?\d+)?\b</Rule>
+    </RuleSet>
+
+</SyntaxDefinition>

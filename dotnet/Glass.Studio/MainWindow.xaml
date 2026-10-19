@@ -1,0 +1,490 @@
+<Window x:Class="Glass.Studio.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
+        xmlns:vm="clr-namespace:Glass.Studio.ViewModels;assembly=Glass.Studio.Core"
+        xmlns:views="clr-namespace:Glass.Studio.Views"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
+        Title="{Binding WindowTitle}"
+        Width="1480" Height="900" MinWidth="980" MinHeight="620"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource WindowBackgroundBrush}"
+        Closing="OnClosing">
+
+    <Window.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding StartOrContinueCommand}" />
+        <KeyBinding Key="F5" Modifiers="Control" Command="{Binding RunWithoutDebuggingCommand}" />
+        <KeyBinding Key="F5" Modifiers="Shift" Command="{Binding StopCommand}" />
+        <KeyBinding Key="F10" Command="{Binding StepOverCommand}" />
+        <KeyBinding Key="F11" Command="{Binding StepIntoCommand}" />
+        <KeyBinding Key="F11" Modifiers="Shift" Command="{Binding StepOutCommand}" />
+        <KeyBinding Key="F9" Command="{Binding ToggleBreakpointCommand}" />
+        <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewCommand}" />
+        <KeyBinding Key="O" Modifiers="Control" Command="{Binding OpenCommand}" />
+        <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveCommand}" />
+        <KeyBinding Key="S" Modifiers="Control+Shift" Command="{Binding SaveAsCommand}" />
+        <KeyBinding Key="OemPlus" Modifiers="Control" Command="{Binding ZoomInCommand}" />
+        <KeyBinding Key="OemMinus" Modifiers="Control" Command="{Binding ZoomOutCommand}" />
+        <KeyBinding Key="D0" Modifiers="Control" Command="{Binding ResetZoomCommand}" />
+    </Window.InputBindings>
+
+    <Window.Resources>
+        <Style x:Key="ToolButtonText" TargetType="TextBlock">
+            <Setter Property="Margin" Value="6,0,2,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="LegendText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="5,0,14,0" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+
+        <!-- ============================ Меню ============================ -->
+        <Menu DockPanel.Dock="Top" Background="White" Padding="4,2">
+            <MenuItem Header="_Файл">
+                <MenuItem Header="_Создать" Command="{Binding NewCommand}" InputGestureText="Ctrl+N" />
+                <MenuItem Header="_Открыть…" Command="{Binding OpenCommand}" InputGestureText="Ctrl+O" />
+                <MenuItem Header="_Сохранить" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S" />
+                <MenuItem Header="Сохранить _как…" Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S" />
+                <Separator />
+                <MenuItem Header="_Примеры" ItemsSource="{Binding ExampleMenu}">
+                    <MenuItem.ItemContainerStyle>
+                        <Style TargetType="MenuItem">
+                            <Setter Property="Header" Value="{Binding Title}" />
+                            <Setter Property="ToolTip" Value="{Binding Description}" />
+                            <Setter Property="Command" Value="{Binding Command}" />
+                        </Style>
+                    </MenuItem.ItemContainerStyle>
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="В_ыход" InputGestureText="Alt+F4" Click="OnExit" />
+            </MenuItem>
+            <MenuItem Header="_Отладка">
+                <MenuItem Header="Начать отладку / _продолжить" Command="{Binding StartOrContinueCommand}" InputGestureText="F5" />
+                <MenuItem Header="Запуск _без отладки" Command="{Binding RunWithoutDebuggingCommand}" InputGestureText="Ctrl+F5" />
+                <Separator />
+                <MenuItem Header="Шаг с _заходом" Command="{Binding StepIntoCommand}" InputGestureText="F11" />
+                <MenuItem Header="Шаг с _обходом" Command="{Binding StepOverCommand}" InputGestureText="F10" />
+                <MenuItem Header="Шаг с _выходом" Command="{Binding StepOutCommand}" InputGestureText="Shift+F11" />
+                <MenuItem Header="_Остановить" Command="{Binding StopCommand}" InputGestureText="Shift+F5" />
+                <Separator />
+                <MenuItem Header="Точка останова на строке _курсора" Command="{Binding ToggleBreakpointCommand}" InputGestureText="F9" />
+                <MenuItem Header="Снять _все точки останова" Command="{Binding ClearBreakpointsCommand}" />
+                <Separator />
+                <MenuItem Header="Собрать _мусор (~gc)" Command="{Binding CollectGarbageCommand}" />
+            </MenuItem>
+            <MenuItem Header="_Вид">
+                <MenuItem Header="Увеличить схему кучи" Command="{Binding ZoomInCommand}" InputGestureText="Ctrl++" />
+                <MenuItem Header="Уменьшить схему кучи" Command="{Binding ZoomOutCommand}" InputGestureText="Ctrl+-" />
+                <MenuItem Header="Масштаб 100%" Command="{Binding ResetZoomCommand}" InputGestureText="Ctrl+0" />
+            </MenuItem>
+            <MenuItem Header="_Справка">
+                <MenuItem Header="О программе" Click="OnAbout" />
+            </MenuItem>
+        </Menu>
+
+        <!-- ====================== Панель инструментов ====================== -->
+        <ToolBarTray DockPanel.Dock="Top" IsLocked="True" Background="{StaticResource WindowBackgroundBrush}">
+            <ToolBar Background="{StaticResource WindowBackgroundBrush}">
+                <Button Command="{Binding StartOrContinueCommand}" ToolTip="Начать отладку или продолжить до точки останова (F5)">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconPlay}" Fill="#16A34A" Stroke="#16A34A" />
+                        <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource ToolButtonText}">
+                                    <Setter Property="Text" Value="Отладка" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                                            <Setter Property="Text" Value="Продолжить" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding RunWithoutDebuggingCommand}" ToolTip="Выполнить программу целиком, не останавливаясь (Ctrl+F5)">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconPlay}" Stroke="#2563EB" Fill="Transparent" />
+                        <TextBlock Style="{StaticResource ToolButtonText}" Text="Запуск" />
+                    </StackPanel>
+                </Button>
+                <Separator />
+                <Button Command="{Binding StepIntoCommand}" ToolTip="Шаг с заходом в вызов (F11)">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconStepInto}" Stroke="#2563EB" />
+                        <TextBlock Style="{StaticResource ToolButtonText}" Text="Шаг в" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding StepOverCommand}" ToolTip="Шаг с обходом вызова (F10)">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconStepOver}" Stroke="#2563EB" />
+                        <TextBlock Style="{StaticResource ToolButtonText}" Text="Шаг через" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding StepOutCommand}" ToolTip="Выйти из текущей функции (Shift+F11)">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconStepOut}" Stroke="#2563EB" />
+                        <TextBlock Style="{StaticResource ToolButtonText}" Text="Шаг из" />
+                    </StackPanel>
+                </Button>
+                <Separator />
+                <Button Command="{Binding StopCommand}" ToolTip="Остановить программу (Shift+F5)">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconStop}" Fill="#DC2626" Stroke="#DC2626" />
+                        <TextBlock Style="{StaticResource ToolButtonText}" Text="Стоп" />
+                    </StackPanel>
+                </Button>
+                <Separator />
+                <Button Command="{Binding ToggleBreakpointCommand}" ToolTip="Поставить или снять точку останова на строке курсора (F9)">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconBreakpoint}" Fill="#E03131" Stroke="#E03131" />
+                        <TextBlock Style="{StaticResource ToolButtonText}" Text="Точка" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding CollectGarbageCommand}" ToolTip="Освободить недостижимые объекты прямо сейчас (как ~gc)">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconTrash}" Stroke="#6D3FC4" />
+                        <TextBlock Style="{StaticResource ToolButtonText}" Text="Собрать мусор" />
+                    </StackPanel>
+                </Button>
+            </ToolBar>
+        </ToolBarTray>
+
+        <!-- ============================ Статусная строка ============================ -->
+        <StatusBar DockPanel.Dock="Bottom" Background="#E9EEF5" Foreground="{StaticResource TextBrush}">
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock x:Name="CaretText" Text="Стр 1, стлб 1" />
+            </StatusBarItem>
+            <StatusBarItem DockPanel.Dock="Right">
+                <TextBlock Text="{Binding HeapSummary}" Margin="0,0,16,0" />
+            </StatusBarItem>
+            <StatusBarItem>
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse>
+                        <Ellipse.Style>
+                            <Style TargetType="Ellipse" BasedOn="{StaticResource StateDot}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                        <Setter Property="Fill" Value="#F59E0B" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsPaused}" Value="True">
+                                        <Setter Property="Fill" Value="#2563EB" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsFinished}" Value="True">
+                                        <Setter Property="Fill" Value="#16A34A" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock Text="{Binding StatusText}" Margin="8,0,0,0" />
+                </StackPanel>
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- ============================ Рабочая область ============================ -->
+        <Grid Margin="8,4,8,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="5*" MinWidth="340" />
+                <ColumnDefinition Width="8" />
+                <ColumnDefinition Width="6*" MinWidth="380" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ====================== Слева: редактор, вывод и ошибки ====================== -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="3*" MinHeight="180" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="1.3*" MinHeight="100" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Style="{StaticResource PanelBorder}">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeader}">
+                            <TextBlock Style="{StaticResource PanelTitle}" Text="Код" />
+                        </Border>
+                        <Border DockPanel.Dock="Top">
+                            <Border.Style>
+                                <Style TargetType="Border" BasedOn="{StaticResource Banner}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsSourceStale}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="Код изменён после запуска: подсветка строки может не совпадать с выполняемой программой. Остановите (Shift+F5) и запустите заново." TextWrapping="Wrap" />
+                        </Border>
+                        <avalon:TextEditor x:Name="CodeEditor"
+                                           FontFamily="Cascadia Mono, Consolas, Courier New"
+                                           FontSize="14"
+                                           ShowLineNumbers="True"
+                                           LineNumbersForeground="#8A94A6"
+                                           WordWrap="False"
+                                           Padding="4,2"
+                                           BorderThickness="0"
+                                           HorizontalScrollBarVisibility="Auto"
+                                           VerticalScrollBarVisibility="Auto"
+                                           Background="White"
+                                           Foreground="{StaticResource TextBrush}" />
+                    </DockPanel>
+                </Border>
+
+                <GridSplitter Grid.Row="1" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                              ResizeDirection="Rows" Background="Transparent" />
+
+                <Border Grid.Row="2" Style="{StaticResource PanelBorder}">
+                    <TabControl SelectedIndex="{Binding SelectedBottomTab, Mode=TwoWay}" BorderThickness="0" Padding="0" Background="Transparent">
+                        <TabItem Header="Вывод">
+                            <TextBox x:Name="OutputBox"
+                                     Text="{Binding Output, Mode=OneWay}"
+                                     IsReadOnly="True"
+                                     FontFamily="Cascadia Mono, Consolas, Courier New"
+                                     FontSize="13"
+                                     BorderThickness="0"
+                                     Padding="8,6"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     TextChanged="OnOutputChanged" />
+                        </TabItem>
+                        <TabItem Header="{Binding ProblemsHeader}">
+                            <Grid>
+                                <ListView ItemsSource="{Binding Problems}"
+                                          SelectedItem="{Binding SelectedProblem, Mode=TwoWay}"
+                                          SelectionMode="Single" BorderThickness="0">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Вид" Width="100" DisplayMemberBinding="{Binding KindText}" />
+                                            <GridViewColumn Header="Место" Width="140" DisplayMemberBinding="{Binding LocationText}" />
+                                            <GridViewColumn Header="Сообщение" Width="620" DisplayMemberBinding="{Binding Message}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                                <TextBlock Text="Ошибок нет">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource HintText}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasProblems}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
+                </Border>
+            </Grid>
+
+            <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                          ResizeDirection="Columns" Background="Transparent" />
+
+            <!-- ====================== Справа: куча, стек, переменные, инспектор ====================== -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="3*" MinHeight="200" />
+                    <RowDefinition Height="8" />
+                    <RowDefinition Height="2.4*" MinHeight="150" />
+                </Grid.RowDefinitions>
+
+                <!-- Куча -->
+                <Border Grid.Row="0" Style="{StaticResource PanelBorder}">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeader}">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <TextBlock Text="{Binding GcMessage}" Style="{StaticResource MutedText}" Margin="0,0,10,0" />
+                                    <Button Command="{Binding CollectGarbageCommand}" Padding="10,1" ToolTip="Освободить недостижимые объекты прямо сейчас (как ~gc)">
+                                        <TextBlock Text="Собрать мусор" />
+                                    </Button>
+                                    <Button Command="{Binding ZoomOutCommand}" Width="26" Margin="10,0,0,0" ToolTip="Уменьшить (Ctrl+-)">
+                                        <TextBlock Text="−" />
+                                    </Button>
+                                    <Button Command="{Binding ResetZoomCommand}" MinWidth="50" Margin="2,0,0,0" ToolTip="Сбросить масштаб (Ctrl+0)">
+                                        <TextBlock Text="{Binding Zoom, StringFormat={}{0:P0}}" />
+                                    </Button>
+                                    <Button Command="{Binding ZoomInCommand}" Width="26" Margin="2,0,0,0" ToolTip="Увеличить (Ctrl++)">
+                                        <TextBlock Text="+" />
+                                    </Button>
+                                </StackPanel>
+                                <TextBlock Style="{StaticResource PanelTitle}" Text="Куча" />
+                            </DockPanel>
+                        </Border>
+
+                        <!-- Условные обозначения -->
+                        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,1,0,0"
+                                Background="{StaticResource PanelHeaderBrush}" Padding="10,4">
+                            <WrapPanel>
+                                <Border Width="12" Height="12" CornerRadius="3" Background="{StaticResource ObjectHeaderBrush}"
+                                        BorderBrush="{StaticResource NodeBorderBrush}" BorderThickness="1" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource LegendText}" Text="объект" />
+                                <Border Width="12" Height="12" CornerRadius="3" Background="{StaticResource ArrayHeaderBrush}"
+                                        BorderBrush="{StaticResource NodeBorderBrush}" BorderThickness="1" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource LegendText}" Text="массив" />
+                                <Border Width="12" Height="12" CornerRadius="3" Background="{StaticResource GarbageSoftBrush}"
+                                        BorderBrush="{StaticResource GarbageBrush}" BorderThickness="1" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource LegendText}" Text="мусор — недостижим, освободится при сборке" />
+                                <Border Width="12" Height="12" CornerRadius="3" Background="White"
+                                        BorderBrush="{StaticResource NewBrush}" BorderThickness="1.5" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource LegendText}" Text="новый" />
+                                <Border Width="12" Height="12" CornerRadius="3" Background="White"
+                                        BorderBrush="{StaticResource ChangedBrush}" BorderThickness="1.5" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource LegendText}" Text="изменён с прошлой паузы" />
+                                <Border Width="22" Height="12" CornerRadius="6" Background="{StaticResource AccentSoftBrush}"
+                                        BorderBrush="{StaticResource AccentBrush}" BorderThickness="1" VerticalAlignment="Center" />
+                                <TextBlock Style="{StaticResource LegendText}" Text="локальная переменная — корень" />
+                            </WrapPanel>
+                        </Border>
+
+                        <Grid>
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                          Background="{StaticResource CanvasBackgroundBrush}"
+                                          PreviewMouseWheel="OnHeapMouseWheel">
+                                <ScrollViewer.Style>
+                                    <Style TargetType="ScrollViewer">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsHeapStale}" Value="True">
+                                                <Setter Property="Opacity" Value="0.55" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ScrollViewer.Style>
+                                <views:HeapGraphView HorizontalAlignment="Left" VerticalAlignment="Top" />
+                            </ScrollViewer>
+
+                            <TextBlock Text="Куча пуста. Поставьте точку останова (F9) и запустите отладку (F5): здесь появятся объекты и ссылки между ними.">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource HintText}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HeapGraph.IsEmpty}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <TextBlock Text="Последнее состояние до завершения программы" HorizontalAlignment="Right" VerticalAlignment="Top"
+                                       Margin="0,6,18,0" IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource MutedText}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsHeapStale}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </DockPanel>
+                </Border>
+
+                <GridSplitter Grid.Row="1" Height="8" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                              ResizeDirection="Rows" Background="Transparent" />
+
+                <!-- Стек, переменные и инспектор -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="220" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="1.25*" MinWidth="240" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Style="{StaticResource PanelBorder}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeader}">
+                                <TextBlock Style="{StaticResource PanelTitle}" Text="Вызовы и переменные" />
+                            </Border>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="2*" MinHeight="40" />
+                                    <RowDefinition Height="6" />
+                                    <RowDefinition Height="3*" MinHeight="60" />
+                                </Grid.RowDefinitions>
+
+                                <ListBox Grid.Row="0" ItemsSource="{Binding CallStack}"
+                                         SelectedItem="{Binding SelectedFrame, Mode=TwoWay}"
+                                         BorderThickness="0" HorizontalContentAlignment="Stretch">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:StackFrameItem}">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding LineText}" Style="{StaticResource MutedText}" Margin="12,0,0,0" />
+                                                <TextBlock Text="{Binding Function}" TextTrimming="CharacterEllipsis">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+
+                                <GridSplitter Grid.Row="1" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                              ResizeDirection="Rows" Background="{StaticResource PanelBorderBrush}" />
+
+                                <ListView Grid.Row="2" ItemsSource="{Binding Locals}"
+                                          SelectedItem="{Binding SelectedLocal, Mode=TwoWay}"
+                                          SelectionMode="Single" BorderThickness="0">
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Имя" Width="90" DisplayMemberBinding="{Binding Name}" />
+                                            <GridViewColumn Header="Тип" Width="80" DisplayMemberBinding="{Binding TypeText}" />
+                                            <GridViewColumn Header="Значение" Width="150">
+                                                <GridViewColumn.CellTemplate>
+                                                    <DataTemplate DataType="{x:Type vm:LocalItem}">
+                                                        <TextBlock Text="{Binding ValueText}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsReference}" Value="True">
+                                                                            <Setter Property="Foreground" Value="{StaticResource RefBrush}" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </DataTemplate>
+                                                </GridViewColumn.CellTemplate>
+                                            </GridViewColumn>
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </Grid>
+                        </DockPanel>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                                  ResizeDirection="Columns" Background="Transparent" />
+
+                    <Border Grid.Column="2" Style="{StaticResource PanelBorder}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeader}">
+                                <TextBlock Style="{StaticResource PanelTitle}" Text="Инспектор объекта" />
+                            </Border>
+                            <views:ObjectInspectorView DataContext="{Binding Inspector}" />
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>

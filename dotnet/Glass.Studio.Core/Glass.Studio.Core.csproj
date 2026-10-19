@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Переносимое ядро IDE (net8.0, БЕЗ WPF): модели, разбор JSON из glass_capi,
+       построение и раскладка графа кучи, отладочный движок, ViewModel'и и
+       команды. Всё, что можно проверить без Windows, живёт здесь и проверяется
+       по-настоящему (Glass.Studio.Tests, против живой libglass_capi.so).
+       WPF-проект (Glass.Studio) — тонкая оболочка из XAML поверх этого. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Glass.Studio</RootNamespace>
+    <AssemblyName>Glass.Studio.Core</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Glass.Interop\Glass.Interop.csproj" />
+  </ItemGroup>
+
+  <!-- Примеры из корня репозитория (examples/*.glass) — встроены в сборку,
+       чтобы и IDE (меню «Примеры»), и тесты брали одни и те же программы,
+       которые уже проверены C++-стороной. Имя ресурса: Examples.<файл>.glass -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\examples\*.glass" LogicalName="Examples.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>

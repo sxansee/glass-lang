@@ -1,0 +1,53 @@
+mold Animal {
+    let name: string
+    let age: int
+
+    Animal(n: string, a: int) {
+        name = n
+        age = a
+    }
+
+    virtual fn speak() -> string {
+        return "..."
+    }
+}
+
+mold Dog : Animal {
+    let breed: string
+
+    Dog(n: string, a: int, b: string) {
+        super(n, a)
+        breed = b
+    }
+
+    override fn speak() -> string {
+        return "Woof"
+    }
+}
+
+fn main() {
+    let d = Dog("Rex", 3, "Labrador")
+
+    // ~address — адрес объекта в куче, как int
+    print(d~address)
+
+    // ~layout — раскладка полей: унаследованные (name, age — от Animal)
+    // первыми, свои (breed) дальше, ровно тот же порядок, что использует
+    // сама VM для доступа к полям
+    print(d~layout)
+
+    // ~vtable — какая реализация speak() реально вызовется: видно, что
+    // это Dog.speak (override), а не Animal.speak
+    print(d~vtable)
+
+    // ~heap — снимок всей кучи целиком на этот момент
+    print(~heap)
+
+    // ~gc — запустить сборку мусора вручную, не дожидаясь порога
+    ~gc
+
+    // объекты интроспекции (LayoutInfo/VTableInfo выше) сами были в куче
+    // и, не будучи никуда сохранены, уже собраны — в снимке остался
+    // только d
+    print(~heap)
+}

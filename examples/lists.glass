@@ -1,0 +1,14 @@
+// Массивы: методы, срезы, отрицательные индексы, range.
+fn main() {
+    let xs = [5, 3, 8]
+    xs.append(1)
+    xs.sort()
+    print(xs, xs.length)
+    print(xs[0], xs[-1])
+    print(xs[1:3], xs[::-1])
+    for i in range(len(xs)) {
+        print(i, xs[i])
+    }
+    print(sum(xs), min(xs), max(xs))
+    print(xs.join(" < "))
+}

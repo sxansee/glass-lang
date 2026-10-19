@@ -1,0 +1,47 @@
+facet Shape {
+    fn area() -> double
+}
+
+mold Circle : Shape {
+    let radius: double
+
+    Circle(r: double) {
+        radius = r
+    }
+
+    fn area() -> double {
+        return 3.14159 * radius * radius
+    }
+}
+
+mold Square : Shape {
+    let side: double
+
+    Square(s: double) {
+        side = s
+    }
+
+    fn area() -> double {
+        return side * side
+    }
+}
+
+fn totalArea(shapes: [Shape]) -> double {
+    let total: double = 0
+    for s in shapes {
+        total += s.area()
+    }
+    return total
+}
+
+fn main() {
+    let shapes: [Shape] = [Circle(3.0), Square(4.0)]
+
+    try {
+        print(totalArea(shapes))
+        print(shapes[0]~vtable)
+        print(shapes[0]~address)
+    } catch e: Exception {
+        print("Ошибка: " + e.message)
+    }
+}

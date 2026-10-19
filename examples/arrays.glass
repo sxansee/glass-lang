@@ -1,0 +1,56 @@
+fn sum(xs: [int]) -> int {
+    let total = 0
+    for x in xs {
+        total += x
+    }
+    return total
+}
+
+fn max(xs: [int]) -> int {
+    let best = xs[0]
+    for x in xs {
+        if x > best {
+            best = x
+        }
+    }
+    return best
+}
+
+mold Counter {
+    let value: int
+
+    Counter(start: int) {
+        value = start
+    }
+
+    fn bump() {
+        value += 1
+    }
+}
+
+fn main() {
+    let numbers = [4, 8, 15, 16, 23, 42]
+    print(numbers)
+    print(sum(numbers))
+    print(max(numbers))
+
+    // Массив — ссылочный тип: bump() внутри метода меняет тот же
+    // Counter, что виден снаружи, а изменение элемента массива —
+    // тот же массив, что и numbers.
+    numbers[0] += 100
+    print(numbers)
+
+    // Массив объектов работает так же, как массив int: элементы —
+    // обычные значения на куче под тем же GC.
+    let counters = [Counter(0), Counter(10), Counter(20)]
+    for c in counters {
+        c.bump()
+    }
+    print(counters[0].value)
+    print(counters[1].value)
+    print(counters[2].value)
+
+    // Вложенные массивы — массив тоже просто значение.
+    let grid = [[1, 2, 3], [4, 5, 6]]
+    print(grid[1][2])
+}

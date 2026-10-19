@@ -1,0 +1,11 @@
+# Сборка C++ (CMake) и .NET
+build/
+out/
+bin/
+obj/
+.vs/
+*.user
+
+# Выход релизного workflow и локальной упаковки
+dist/
+release-notes.md

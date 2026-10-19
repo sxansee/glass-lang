@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Тесты переносимого ядра IDE. Намеренно БЕЗ xUnit/NUnit — как и C++-тесты, это
+       обычная консольная программа с крошечным собственным каркасом (TestKit): ноль
+       NuGet-зависимостей, собирается и работает одинаково на Windows и Linux.
+       Тесты ЖИВЫЕ: гоняют настоящую libglass_capi / glass_capi.dll. Запуск:
+           dotnet run -c Release (из папки dotnet/Glass.Studio.Tests)
+       Библиотеку ищет сам (build/, build/Release, build/Debug, out/build/...);
+       нестандартное место — переменная окружения GLASS_CAPI_PATH. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Glass.Studio.Tests</RootNamespace>
+    <AssemblyName>Glass.Studio.Tests</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Glass.Studio.Core\Glass.Studio.Core.csproj" />
+  </ItemGroup>
+
+</Project>

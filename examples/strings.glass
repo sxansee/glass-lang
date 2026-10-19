@@ -1,0 +1,15 @@
+// Строки: кириллица, срезы, методы.
+fn main() {
+    let s = "  Привет, Мир!  "
+    let t = s.trim()
+    print(t, len(t))
+    print(t.upper(), t.lower())
+    print(t[:6], t[-4:], t[::-1])
+    print(t.replace("Мир", "Glass"))
+    let words = "to be or not to be".split(" ")
+    print(words, words.length)
+    for c in "Да!" {
+        print(c)
+    }
+    print("-" * 10)
+}

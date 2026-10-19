@@ -1,0 +1,228 @@
+<UserControl x:Class="Glass.Studio.Views.HeapGraphView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:heap="clr-namespace:Glass.Studio.Heap;assembly=Glass.Studio.Core"
+             xmlns:vm="clr-namespace:Glass.Studio.ViewModels;assembly=Glass.Studio.Core"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:MainViewModel}">
+
+    <!-- Схема кучи. DataContext — MainViewModel (наследуется от окна). Раскладка (координаты узлов,
+         геометрия рёбер) посчитана в Glass.Studio.Core (HeapGraphBuilder) и покрыта тестами; здесь —
+         только отрисовка по готовым числам. Размеры строк берутся из тех же констант HeapMetrics,
+         по которым посчитаны точки выхода рёбер, поэтому стрелки попадают ровно в строки узлов. -->
+    <UserControl.Resources>
+
+        <Style x:Key="EdgePathStyle" TargetType="Path">
+            <Setter Property="Stroke" Value="{StaticResource EdgeBrush}" />
+            <Setter Property="StrokeThickness" Value="1.5" />
+            <Setter Property="StrokeLineJoin" Value="Round" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFromGarbage}" Value="True">
+                    <Setter Property="Stroke" Value="{StaticResource GarbageBrush}" />
+                    <Setter Property="StrokeDashArray" Value="4 3" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Emphasized}" Value="True">
+                    <Setter Property="Stroke" Value="{StaticResource AccentBrush}" />
+                    <Setter Property="StrokeThickness" Value="2.5" />
+                    <Setter Property="StrokeDashArray" Value="" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NodeBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource NodeBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsNew}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource NewBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsChanged}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource ChangedBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsGarbage}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource GarbageBrush}" />
+                    <Setter Property="Background" Value="{StaticResource GarbageSoftBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                    <Setter Property="BorderThickness" Value="2" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="NodeHeaderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource ObjectHeaderBrush}" />
+            <Setter Property="CornerRadius" Value="5,5,0,0" />
+            <Setter Property="Padding" Value="12,0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsArray}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource ArrayHeaderBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsGarbage}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource GarbageHeaderBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Ярлык в заголовке узла: new / изм. / мусор -->
+        <Style x:Key="NodeBadgeStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsNew}" Value="True">
+                    <Setter Property="Text" Value="new" />
+                    <Setter Property="Foreground" Value="{StaticResource NewBrush}" />
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsChanged}" Value="True">
+                    <Setter Property="Text" Value="изм." />
+                    <Setter Property="Foreground" Value="{StaticResource ChangedBrush}" />
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsGarbage}" Value="True">
+                    <Setter Property="Text" Value="мусор" />
+                    <Setter Property="Foreground" Value="{StaticResource GarbageBrush}" />
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RowBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Changed}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource ChangedSoftBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RowValueStyle" TargetType="TextBlock" BasedOn="{StaticResource MonoText}">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsReference}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource RefBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="OverflowTextStyle" TargetType="TextBlock" BasedOn="{StaticResource MonoMutedText}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Margin" Value="12,0" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasOverflow}" Value="True">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RootChipStyle" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+        </Style>
+
+        <Style x:Key="CanvasItemStyle" TargetType="ContentPresenter">
+            <Setter Property="Canvas.Left" Value="{Binding X}" />
+            <Setter Property="Canvas.Top" Value="{Binding Y}" />
+        </Style>
+
+    </UserControl.Resources>
+
+    <Grid Background="Transparent"
+          Width="{Binding HeapGraph.Width}"
+          Height="{Binding HeapGraph.Height}"
+          MouseLeftButtonDown="OnBackgroundMouseDown">
+        <Grid.LayoutTransform>
+            <ScaleTransform ScaleX="{Binding Zoom}" ScaleY="{Binding Zoom}" />
+        </Grid.LayoutTransform>
+
+        <!-- Слой 1: рёбра (ссылки) — под узлами -->
+        <ItemsControl ItemsSource="{Binding HeapGraph.Edges}" IsHitTestVisible="False" Focusable="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type heap:HeapEdgeModel}">
+                    <Path Data="{Binding PathData}" Style="{StaticResource EdgePathStyle}" />
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Слой 2: корни — ссылочные локальные переменные, от которых считается достижимость -->
+        <ItemsControl ItemsSource="{Binding HeapGraph.Roots}" ItemContainerStyle="{StaticResource CanvasItemStyle}" Focusable="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type heap:RootModel}">
+                    <Border Width="{Binding Width}" Height="{Binding Height}"
+                            Style="{StaticResource RootChipStyle}"
+                            ToolTip="{Binding Label}"
+                            MouseLeftButtonDown="OnRootMouseDown">
+                        <TextBlock Text="{Binding Label}" Style="{StaticResource MonoText}"
+                                   Margin="12,0" TextTrimming="CharacterEllipsis" />
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Слой 3: объекты и массивы кучи -->
+        <ItemsControl ItemsSource="{Binding HeapGraph.Nodes}" ItemContainerStyle="{StaticResource CanvasItemStyle}" Focusable="False">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type heap:HeapNodeModel}">
+                    <Border Width="{Binding Width}" Height="{Binding Height}"
+                            Style="{StaticResource NodeBorderStyle}"
+                            MouseLeftButtonDown="OnNodeMouseDown">
+                        <StackPanel>
+                            <Border Height="{x:Static heap:HeapMetrics.HeaderHeight}" Style="{StaticResource NodeHeaderStyle}">
+                                <DockPanel LastChildFill="True">
+                                    <TextBlock DockPanel.Dock="Right" Text="{Binding Subtitle}" Style="{StaticResource MonoMutedText}" />
+                                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource NodeBadgeStyle}" />
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" Margin="0,0,8,0" />
+                                </DockPanel>
+                            </Border>
+                            <ItemsControl ItemsSource="{Binding Rows}" Focusable="False">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type heap:HeapRowModel}">
+                                        <Border Height="{x:Static heap:HeapMetrics.RowHeight}" Style="{StaticResource RowBorderStyle}">
+                                            <DockPanel Margin="12,0,16,0" LastChildFill="False">
+                                                <TextBlock DockPanel.Dock="Left" Text="{Binding Label}" Style="{StaticResource MonoMutedText}" />
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding ValueText}" Style="{StaticResource RowValueStyle}" />
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Height="{x:Static heap:HeapMetrics.RowHeight}" Text="{Binding OverflowText}"
+                                       Style="{StaticResource OverflowTextStyle}" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Grid>
+</UserControl>

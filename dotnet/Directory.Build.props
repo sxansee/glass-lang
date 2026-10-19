@@ -1,0 +1,17 @@
+<Project>
+
+  <!-- Единое место версии и метаданных для всех .NET-проектов решения.
+       Версия X.Y.Z здесь — единственный источник для сборок и для AppInfo.Version; ту же цифру держит
+       project(Glass VERSION ...) в CMakeLists.txt (тест «репозиторий: версия едина» следит за совпадением).
+       Как выпускать релиз — RELEASING.md. -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <Authors>sxansee</Authors>
+    <Product>Glass</Product>
+    <Copyright>Copyright (c) 2026 sxansee</Copyright>
+    <RepositoryUrl>https://github.com/sxansee/glass-lang</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+  </PropertyGroup>
+
+</Project>

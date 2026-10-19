@@ -1,0 +1,36 @@
+// Связный список: каждый узел хранит ссылку на следующий.
+//
+// В IDE: поставьте точку останова (F9) на строке `print(length(head))`,
+// запустите отладку (F5) и посмотрите на схему кучи — цепочка стрелок от
+// `head` через все четыре узла до null. Шагайте внутрь length() (F11) и
+// следите, как cur ползёт по списку.
+mold Node {
+    let value: int
+    let next: Node
+
+    Node(v: int, n: Node) {
+        value = v
+        next = n
+    }
+}
+
+fn length(head: Node) -> int {
+    let count = 0
+    let cur = head
+    while cur != null {
+        count += 1
+        cur = cur.next
+    }
+    return count
+}
+
+fn main() {
+    let head: Node = null
+    let i = 1
+    while i <= 4 {
+        head = Node(i * 10, head)
+        i += 1
+    }
+    print(length(head))
+    print(head.value)
+}

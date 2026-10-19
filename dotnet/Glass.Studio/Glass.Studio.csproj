@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Glass Studio: WPF-оболочка IDE. Намеренно тонкая: окно, XAML, редактор AvalonEdit.
+       Вся логика (отладчик, куча, ViewModel, раскладка схемы) живёт в Glass.Studio.Core и
+       проверена тестами против живой библиотеки.
+
+       ВАЖНО: этот проект писался в Linux-контейнере, где нет ни Windows, ни WPF-пакетов,
+       поэтому он ни разу не компилировался. Что и как проверено — dotnet/README.md,
+       раздел «Первая сборка». -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <RootNamespace>Glass.Studio</RootNamespace>
+    <AssemblyName>GlassStudio</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>12.0</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Редактор кода. Плавающая версия 6.3.*: любой выпуск ветки 6.3 с API, по которому
+         писались Editor/*.cs (сверено с исходниками AvalonEdit 6.3). -->
+    <PackageReference Include="AvalonEdit" Version="6.3.*" />
+    <ProjectReference Include="..\Glass.Studio.Core\Glass.Studio.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Editor\Glass.xshd" LogicalName="Glass.Studio.Editor.Glass.xshd" />
+  </ItemGroup>
+
+  <!-- После сборки кладём glass_capi.dll рядом с GlassStudio.exe. Ищем в типичных местах
+       сборки C++-части (Visual Studio «Открыть папку» → out\build\x64-*, CMake CLI с генератором
+       Visual Studio → build\<Config>). Своё место: msbuild -p:GlassNativeDll=C:\путь\glass_capi.dll -->
+  <PropertyGroup>
+    <GlassRepoRoot>$(MSBuildThisFileDirectory)..\..\</GlassRepoRoot>
+  </PropertyGroup>
+
+  <Target Name="CopyGlassNative" AfterTargets="Build">
+    <ItemGroup>
+      <GlassNativeCandidate Include="$(GlassRepoRoot)build\glass_capi.dll" />
+      <GlassNativeCandidate Include="$(GlassRepoRoot)build\$(Configuration)\glass_capi.dll" />
+      <GlassNativeCandidate Include="$(GlassRepoRoot)out\build\x64-$(Configuration)\glass_capi.dll" />
+      <GlassNativeCandidate Include="$(GlassNativeDll)" Condition="'$(GlassNativeDll)' != ''" />
+      <GlassNativeFound Include="@(GlassNativeCandidate)" Condition="Exists('%(FullPath)')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(GlassNativeFound)" DestinationFolder="$(OutDir)" Condition="'@(GlassNativeFound)' != ''" />
+    <Warning Condition="'@(GlassNativeFound)' == ''"
+             Text="glass_capi.dll не найдена: сначала соберите C++-часть (см. README, «Сборка на Windows») или укажите путь: -p:GlassNativeDll=C:\путь\glass_capi.dll. Без неё GlassStudio.exe запустится, но выполнять программы не сможет." />
+  </Target>
+
+</Project>
