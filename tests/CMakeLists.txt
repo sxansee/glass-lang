@@ -49,6 +49,15 @@ target_link_libraries(capi_tests PRIVATE glass_capi Threads::Threads)
 
 add_test(NAME capi_tests COMMAND capi_tests)
 
+if(WIN32)
+    # У Windows нет RPATH: загрузчик ищет glass_capi.dll только рядом с exe (или в PATH). DLL лежит в
+    # build/Release, а тест — в build/tests/Release, поэтому без копии capi_tests.exe не запускается вовсе
+    # (код выхода 0xC0000135, вывода нет). Копируем DLL после каждой сборки теста.
+    add_custom_command(TARGET capi_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:glass_capi> $<TARGET_FILE_DIR:capi_tests>
+        COMMENT "glass_capi.dll рядом с capi_tests.exe")
+endif()
+
 add_executable(language_tests language_tests.cpp)
 target_link_libraries(language_tests PRIVATE glass_lexer glass_ast glass_parser glass_sema glass_codegen glass_vm glass_prelude)
 

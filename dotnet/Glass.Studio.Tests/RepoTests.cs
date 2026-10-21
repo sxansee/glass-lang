@@ -21,6 +21,7 @@ namespace Glass.Studio.Tests
             Add("репозиторий: служебные файлы на месте (лицензия, CI, релиз, шаблоны)", HousekeepingFiles);
             Add("репозиторий: workflow ссылаются на существующие скрипты и проекты", WorkflowReferences);
             Add("репозиторий: test-all.* запускают все C++-наборы из tests/CMakeLists.txt", ScriptsCoverAllSuites);
+            Add("репозиторий: тесты, линкуемые с glass_capi, получают DLL рядом с exe (на Windows нет RPATH)", DllNextToTests);
         }
 
         private static string? FindRoot()
@@ -118,6 +119,21 @@ namespace Glass.Studio.Tests
                                  .Select(m => m.Groups[1].Value).Distinct().ToList();
                 Check(paths.Count > 0, workflow + ": найдены ссылки на файлы репозитория");
                 foreach (string path in paths) Check(Exists(path), workflow + " ссылается на существующий " + path);
+            }
+        }
+
+        // ------------------------------------------------------------------ DLL рядом с тестами
+
+        private static void DllNextToTests()
+        {
+            string cmake = Read("tests/CMakeLists.txt");
+            var targets = Regex.Matches(cmake, @"target_link_libraries\(\s*(\w+)\s+PRIVATE[^)]*\bglass_capi\b")
+                               .Select(m => m.Groups[1].Value).Distinct().ToList();
+            Check(targets.Count > 0, "tests/CMakeLists.txt: найден хотя бы один тест, использующий glass_capi");
+            foreach (string target in targets)
+            {
+                bool copied = Regex.IsMatch(cmake, @"add_custom_command\(\s*TARGET\s+" + Regex.Escape(target) + @"\s+POST_BUILD[^)]*glass_capi");
+                Check(copied, target + ": после сборки glass_capi.dll копируется рядом с exe (иначе на Windows тест не запускается: код 0xC0000135, вывода нет)");
             }
         }
 

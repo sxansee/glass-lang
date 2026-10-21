@@ -44,6 +44,7 @@ jobs:
         run: ./scripts/test-all.ps1
 
       - name: Сборка WPF-оболочки (dotnet/Glass.sln)
+        if: ${{ !cancelled() }}
         run: dotnet build dotnet/Glass.sln -c Release --nologo
 
       - name: glass_capi.dll лежит рядом с GlassStudio.exe
