@@ -20,15 +20,19 @@ namespace Glass.Studio.ViewModels
         private bool _isSelected;
         private string _starsText = "";
 
-        public LessonItem(Lesson lesson)
+        public LessonItem(Lesson lesson, Action<LessonItem>? select = null)
         {
             Lesson = lesson;
+            SelectCommand = new RelayCommand(() => select?.Invoke(this));
         }
 
         public Lesson Lesson { get; }
         public string Title => Lesson.Title;
         public string NumberText => Lesson.NumberText;
         public string Summary => Lesson.Summary;
+
+        /// <summary>Нажатие на строку урока в списке: открыть этот урок. Своя команда у строки — WPF-списку не нужен код в окне.</summary>
+        public ICommand SelectCommand { get; }
 
         public bool IsCompleted { get => _isCompleted; private set => SetProperty(ref _isCompleted, value); }
         public bool IsSelected { get => _isSelected; internal set => SetProperty(ref _isSelected, value); }
@@ -100,7 +104,7 @@ namespace Glass.Studio.ViewModels
             _progress = _store.Load();
 
             Chapters = CourseCatalog.Chapters
-                .Select(c => new ChapterItem(c, c.Lessons.Select(l => new LessonItem(l)).ToList()))
+                .Select(c => new ChapterItem(c, c.Lessons.Select(l => new LessonItem(l, item => SelectedLesson = item)).ToList()))
                 .ToList();
             AllLessons = Chapters.SelectMany(c => c.Lessons).ToList();
 
@@ -174,6 +178,9 @@ namespace Glass.Studio.ViewModels
         public string LevelText => "Уровень: " + CourseScoring.LevelTitle(CompletedCount, TotalCount);
         public string StarsSummary => "★ " + _progress.TotalStars.ToString(CultureInfo.InvariantCulture) + " из " + (TotalCount * 3).ToString(CultureInfo.InvariantCulture);
         public bool IsAllDone => TotalCount > 0 && CompletedCount == TotalCount;
+
+        /// <summary>Подпись главной кнопки приветствия: пока ничего не пройдено — «Начать», потом — «Продолжить», в конце — «Повторить».</summary>
+        public string StartText => CompletedCount == 0 ? "Начать курс" : IsAllDone ? "Повторить с начала" : "Продолжить курс";
 
         public int SelectedIndex => _selected == null ? -1 : AllLessons.ToList().IndexOf(_selected);
         public bool CanGoNext => SelectedIndex >= 0 && SelectedIndex < AllLessons.Count - 1;
@@ -375,6 +382,7 @@ namespace Glass.Studio.ViewModels
             OnPropertyChanged(nameof(LevelText));
             OnPropertyChanged(nameof(StarsSummary));
             OnPropertyChanged(nameof(IsAllDone));
+            OnPropertyChanged(nameof(StartText));
             OnPropertyChanged(nameof(CanGoNext));
         }
 

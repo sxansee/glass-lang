@@ -128,7 +128,7 @@ namespace Glass.Studio.ViewModels
         /// <summary>Весь вывод print() программы.</summary>
         public string Output { get => _output; private set => SetProperty(ref _output, value); }
 
-        /// <summary>0 — «Вывод», 1 — «Ошибки».</summary>
+        /// <summary>0 — «Вывод», 1 — «Ошибки», 2 — «Журнал».</summary>
         public int SelectedBottomTab { get => _selectedBottomTab; set => SetProperty(ref _selectedBottomTab, value); }
 
         public IReadOnlyList<ProblemItem> Problems

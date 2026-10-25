@@ -1,7 +1,10 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using Glass.Interop;
+using Glass.Studio.Logging;
+using Glass.Studio.Services;
 
 namespace Glass.Studio
 {
@@ -9,22 +12,34 @@ namespace Glass.Studio
     {
         public App()
         {
+            // Три места, где исключение может проскочить мимо try/catch: поток интерфейса, любой другой поток, фоновая задача.
+            // Во всех трёх сначала записываем причину в журнал — по нему потом можно разобраться, что случилось.
             DispatcherUnhandledException += OnDispatcherUnhandledException;
+            AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
         }
 
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+            AppServices.Log.Info("Приложение", AppInfo.Name + " " + AppInfo.Version + " запущен");
 
             // Самая частая беда первого запуска — нет нативной библиотеки или не та разрядность.
             // Объясняем это сразу и по-человечески, а не «Unable to load DLL» посреди работы.
             string? problem = ProbeNativeLibrary();
             if (problem != null)
             {
+                AppServices.Log.Warning("Приложение", problem.Replace("\n", " "));
                 MessageBox.Show(problem, "Glass Studio", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
             new MainWindow().Show();
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            AppServices.Log.Info("Приложение", "Закрыто, код выхода " + e.ApplicationExitCode);
+            base.OnExit(e);
         }
 
         private static string? ProbeNativeLibrary()
@@ -54,9 +69,23 @@ namespace Glass.Studio
 
         private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
-            MessageBox.Show("Неожиданная ошибка: " + e.Exception.Message, "Glass Studio",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            AppServices.Log.Error("Приложение", "Необработанное исключение в потоке интерфейса", e.Exception);
+            MessageBox.Show("Неожиданная ошибка: " + e.Exception.Message +
+                            "\n\nПодробности записаны в журнал (вкладка «Журнал» или Справка → Открыть папку журналов).",
+                "Glass Studio", MessageBoxButton.OK, MessageBoxImage.Error);
             e.Handled = true;   // IDE не должна закрываться из-за одного сбоя в обработчике
+        }
+
+        private static void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            // Процесс уже завершается — главное успеть записать причину.
+            AppServices.Log.Error("Приложение", "Необработанное исключение (процесс завершается: " + e.IsTerminating + ")", e.ExceptionObject as Exception);
+        }
+
+        private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            AppServices.Log.Error("Приложение", "Необработанное исключение в фоновой задаче", e.Exception);
+            e.SetObserved();
         }
     }
 }

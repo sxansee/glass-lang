@@ -1,0 +1,427 @@
+<Window x:Class="Glass.Studio.CourseWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:Glass.Studio.ViewModels;assembly=Glass.Studio.Core"
+        xmlns:course="clr-namespace:Glass.Studio.Course;assembly=Glass.Studio.Core"
+        xmlns:beh="clr-namespace:Glass.Studio.Behaviors"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:CourseViewModel}"
+        Title="Курс по Glass"
+        Width="960" Height="820" MinWidth="780" MinHeight="560"
+        Background="{StaticResource WindowBackgroundBrush}"
+        Loaded="OnLoaded">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!-- ============================ Кнопки ============================ -->
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="Margin" Value="0,0,8,8" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chrome"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Chrome" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ActionButton}">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <!-- Строка урока в списке: выбранный подсвечен, под курсором — слегка затемнён -->
+        <Style x:Key="LessonRow" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Row" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="#EEF2F9" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AccentSoftBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- ============================ Текст и блоки ============================ -->
+        <Style x:Key="LessonText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="LineHeight" Value="22" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+            <Setter Property="Margin" Value="0,4,0,8" />
+        </Style>
+
+        <Style x:Key="CodeText" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="LineHeight" Value="19" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        </Style>
+
+        <Style x:Key="CodeBox" TargetType="Border">
+            <Setter Property="Background" Value="#F6F8FB" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="5" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Margin" Value="0,4,0,10" />
+        </Style>
+
+        <!-- Блок кода из теории: программа — светлый, вывод программы — тёмный, как консоль -->
+        <Style x:Key="LessonCodeBox" TargetType="Border" BasedOn="{StaticResource CodeBox}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOutput}" Value="True">
+                    <Setter Property="Background" Value="#1F2937" />
+                    <Setter Property="BorderBrush" Value="#111827" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="LessonCodeText" TargetType="TextBlock" BasedOn="{StaticResource CodeText}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsOutput}" Value="True">
+                    <Setter Property="Foreground" Value="#E5E7EB" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="HintPanel" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource ChangedSoftBrush}" />
+            <Setter Property="BorderBrush" Value="#F1CF8E" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="Margin" Value="0,6,0,8" />
+        </Style>
+
+        <Style x:Key="ResultCard" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource PanelHeaderBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="Margin" Value="0,10,0,8" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSuccess}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource NewSoftBrush}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource NewBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsFailure}" Value="True">
+                    <Setter Property="Background" Value="{StaticResource GarbageSoftBrush}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource GarbageBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ResultTitleText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSuccess}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource NewBrush}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsFailure}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource GarbageBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- ============================ Блоки теории (по типу блока) ============================ -->
+        <DataTemplate DataType="{x:Type course:HeadingBlock}">
+            <TextBlock Text="{Binding Text}" FontSize="17" FontWeight="SemiBold" TextWrapping="Wrap"
+                       Foreground="{StaticResource TextBrush}" Margin="0,18,0,4" />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type course:ParagraphBlock}">
+            <TextBlock Style="{StaticResource LessonText}" beh:RichTextBehavior.Source="{Binding Text}" />
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type course:NoteBlock}">
+            <Border Background="{StaticResource AccentSoftBrush}" BorderBrush="{StaticResource AccentBrush}"
+                    BorderThickness="3,0,0,0" CornerRadius="0,5,5,0" Padding="14,8" Margin="0,6,0,10">
+                <TextBlock Style="{StaticResource LessonText}" Margin="0" beh:RichTextBehavior.Source="{Binding Text}" />
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type course:BulletBlock}">
+            <ItemsControl ItemsSource="{Binding Items}" Margin="0,2,0,8">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type course:RichText}">
+                        <Grid Margin="0,2,0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="22" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="•" FontSize="14" Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Style="{StaticResource LessonText}" Margin="0"
+                                       beh:RichTextBehavior.Source="{Binding}" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type course:CodeBlock}">
+            <Border Style="{StaticResource LessonCodeBox}">
+                <TextBlock Style="{StaticResource LessonCodeText}" Text="{Binding Code}" />
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" MinWidth="240" />
+            <ColumnDefinition Width="8" />
+            <ColumnDefinition Width="*" MinWidth="420" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ====================== Слева: программа курса и прогресс ====================== -->
+        <Border Grid.Column="0" Style="{StaticResource PanelBorder}">
+            <DockPanel>
+                <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeader}">
+                    <TextBlock Style="{StaticResource PanelTitle}" Text="Программа курса" />
+                </Border>
+
+                <StackPanel DockPanel.Dock="Top" Margin="12,10,12,10">
+                    <TextBlock Text="{Binding ProgressText}" FontWeight="SemiBold" />
+                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding ProgressPercent, Mode=OneWay}"
+                                 Height="8" Margin="0,6,0,6" BorderThickness="0"
+                                 Background="#E5E9F0" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="{Binding LevelText}" Style="{StaticResource MutedText}" />
+                    <TextBlock Text="{Binding StarsSummary}" Style="{StaticResource MutedText}" />
+                </StackPanel>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Chapters}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:ChapterItem}">
+                                <StackPanel Margin="0,0,0,6">
+                                    <Border Background="{StaticResource PanelHeaderBrush}" Padding="12,6">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Text="{Binding ProgressText}" Style="{StaticResource MutedText}" Margin="8,0,0,0" />
+                                            <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        </DockPanel>
+                                    </Border>
+                                    <ItemsControl ItemsSource="{Binding Lessons}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:LessonItem}">
+                                                <Button Style="{StaticResource LessonRow}" Command="{Binding SelectCommand}" ToolTip="{Binding Summary}">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="40" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="{Binding NumberText}" Style="{StaticResource MutedText}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding StarsText}" Foreground="{StaticResource ChangedBrush}"
+                                                                   VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <GridSplitter Grid.Column="1" Width="8" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                      ResizeDirection="Columns" Background="Transparent" />
+
+        <!-- ====================== Справа: приветствие или урок ====================== -->
+        <Border Grid.Column="2" Style="{StaticResource PanelBorder}">
+            <Grid>
+
+                <!-- ========== Приветствие ========== -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel Margin="36,30,36,30" MaxWidth="680" HorizontalAlignment="Left">
+                        <TextBlock Text="Курс по Glass" FontSize="28" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}" />
+                        <TextBlock Text="От первой программы до интроспекции памяти — короткими шагами."
+                                   FontSize="15" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,4,0,16" />
+                        <TextBlock Style="{StaticResource LessonText}"
+                                   Text="Каждый урок — теория с примерами и небольшая задача. Задачу вы решаете в обычном редакторе IDE, а курс сам запускает вашу программу и проверяет результат." />
+
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="Как проходить урок" />
+                        <TextBlock Style="{StaticResource LessonText}" Margin="0,2">
+                            <Run FontWeight="SemiBold" Text="1." /><Run Text=" Прочитайте теорию и разберите примеры." />
+                        </TextBlock>
+                        <TextBlock Style="{StaticResource LessonText}" Margin="0,2">
+                            <Run FontWeight="SemiBold" Text="2." /><Run Text=" Нажмите «Загрузить заготовку» — она появится в редакторе главного окна." />
+                        </TextBlock>
+                        <TextBlock Style="{StaticResource LessonText}" Margin="0,2">
+                            <Run FontWeight="SemiBold" Text="3." /><Run Text=" Допишите решение и нажмите «Проверить»." />
+                        </TextBlock>
+                        <TextBlock Style="{StaticResource LessonText}" Margin="0,2">
+                            <Run FontWeight="SemiBold" Text="4." /><Run Text=" Застряли — возьмите «Подсказку»; в крайнем случае есть «Решение»." />
+                        </TextBlock>
+
+                        <TextBlock Style="{StaticResource SectionTitle}" Text="Звёзды" />
+                        <TextBlock Style="{StaticResource LessonText}" Margin="0,2" Text="★★★ — решено с первых двух попыток без подсказок." />
+                        <TextBlock Style="{StaticResource LessonText}" Margin="0,2" Text="★★☆ — с подсказкой или после нескольких попыток." />
+                        <TextBlock Style="{StaticResource LessonText}" Margin="0,2" Text="★☆☆ — после просмотра решения." />
+
+                        <Border Style="{StaticResource HintPanel}" Margin="0,22,0,14">
+                            <StackPanel>
+                                <TextBlock Text="{Binding ProgressText}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding LevelText}" Style="{StaticResource MutedText}" />
+                                <TextBlock Text="{Binding StarsSummary}" Style="{StaticResource MutedText}" />
+                                <TextBlock Text="Курс пройден целиком — поздравляем!" FontWeight="SemiBold" Foreground="{StaticResource NewBrush}"
+                                           Margin="0,6,0,0" Visibility="{Binding IsAllDone, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                        </Border>
+
+                        <WrapPanel>
+                            <Button Style="{StaticResource PrimaryButton}" Padding="22,9" Content="{Binding StartText}" Command="{Binding StartCommand}" />
+                            <Button Style="{StaticResource ActionButton}" Padding="16,9" Content="Сбросить прогресс" Click="OnResetProgress" />
+                        </WrapPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- ========== Урок ========== -->
+                <DockPanel Visibility="{Binding HasLesson, Converter={StaticResource BoolToVisibility}}">
+
+                    <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeader}" Padding="16,10">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource ActionButton}" Margin="12,0,0,0" Padding="12,5"
+                                    Content="К началу курса" Command="{Binding ShowWelcomeCommand}" />
+                            <StackPanel>
+                                <TextBlock Text="{Binding LessonTitle}" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding LessonSubtitle}" Style="{StaticResource MutedText}" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,1,0,0" Padding="16,10">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Left" Style="{StaticResource ActionButton}" Margin="0" Padding="12,5"
+                                    Content="← Предыдущий урок" Command="{Binding PreviousCommand}" />
+                            <Button DockPanel.Dock="Right" Style="{StaticResource ActionButton}" Margin="0" Padding="12,5"
+                                    Content="Следующий урок →" Command="{Binding NextCommand}" />
+                            <TextBlock Text="{Binding StatusText}" Style="{StaticResource MutedText}" TextWrapping="Wrap"
+                                       HorizontalAlignment="Center" TextAlignment="Center" Margin="12,0" />
+                        </DockPanel>
+                    </Border>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="26,8,26,22" MaxWidth="820" HorizontalAlignment="Left">
+
+                            <ItemsControl ItemsSource="{Binding Theory}" />
+
+                            <TextBlock Style="{StaticResource SectionTitle}" FontSize="17" Margin="0,22,0,4" Text="Задача" />
+                            <TextBlock Style="{StaticResource LessonText}" beh:RichTextBehavior.Source="{Binding TaskText}" />
+
+                            <WrapPanel Margin="0,10,0,0">
+                                <Button Style="{StaticResource ActionButton}" Content="Загрузить заготовку" Command="{Binding LoadStarterCommand}"
+                                        ToolTip="Подставить заготовку урока в редактор главного окна" />
+                                <Button Style="{StaticResource PrimaryButton}" Content="Проверить" Command="{Binding CheckCommand}"
+                                        ToolTip="Взять код из редактора, запустить и сравнить вывод с ожидаемым" />
+                                <Button Style="{StaticResource ActionButton}" Content="Подсказка" Command="{Binding HintCommand}"
+                                        ToolTip="Показать подсказку (меньше звёзд за урок)" />
+                                <Button Style="{StaticResource ActionButton}" Content="Решение" Command="{Binding SolutionCommand}"
+                                        ToolTip="Показать решение (одна звезда за урок)" />
+                            </WrapPanel>
+
+                            <Border Style="{StaticResource HintPanel}" Visibility="{Binding IsHintVisible, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="Подсказка" FontWeight="SemiBold" Foreground="{StaticResource ChangedBrush}" />
+                                    <TextBlock Style="{StaticResource LessonText}" Margin="0,4,0,0" Text="{Binding HintText}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CodeBox}" Visibility="{Binding IsSolutionVisible, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Text="Решение" FontWeight="SemiBold" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,6" />
+                                    <TextBlock Style="{StaticResource CodeText}" Text="{Binding SolutionText}" />
+                                    <Button Style="{StaticResource ActionButton}" Margin="0,10,0,0" HorizontalAlignment="Left"
+                                            Content="Загрузить решение в редактор" Command="{Binding LoadSolutionCommand}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource ResultCard}" Visibility="{Binding HasResult, Converter={StaticResource BoolToVisibility}}">
+                                <StackPanel>
+                                    <TextBlock Style="{StaticResource ResultTitleText}" Text="{Binding ResultTitle}" />
+                                    <TextBlock Style="{StaticResource LessonText}" Margin="0,4,0,0" Text="{Binding ResultMessage}" />
+                                    <Grid Margin="0,8,0,0" Visibility="{Binding ShowOutputComparison, Converter={StaticResource BoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Ваш вывод" Style="{StaticResource MutedText}" />
+                                            <Border Style="{StaticResource CodeBox}" Margin="0,4,0,0">
+                                                <TextBlock Style="{StaticResource CodeText}" Text="{Binding ActualOutput}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Ожидалось" Style="{StaticResource MutedText}" />
+                                            <Border Style="{StaticResource CodeBox}" Margin="0,4,0,0">
+                                                <TextBlock Style="{StaticResource CodeText}" Text="{Binding ExpectedOutput}" />
+                                            </Border>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

@@ -40,6 +40,11 @@ public:
     // строке на вызов. Используется тестами вместо перехвата stdout.
     const std::vector<std::string>& printedLines() const { return output_; }
 
+    // Дублировать ли print() в std::cout. По умолчанию — да: консольные glassc и REPL показывают вывод сразу.
+    // Клиенты C API забирают вывод через printedLines()/glass_get_output и эхо отключают: иначе вывод программы
+    // попадает в stdout процесса-хозяина (у DLL на Windows — через её собственный буфер) и путается с его собственным.
+    void setEchoOutput(bool echo) { echoOutput_ = echo; }
+
     // Для тестов GC: сколько объектов сейчас живо в куче (после sweep).
     size_t liveObjectCount() const { return liveObjectCount_; }
     // Принудительный запуск сборки мусора — используется тестами и
@@ -174,6 +179,7 @@ private:
     std::vector<std::string> errors_;
     std::vector<std::string> output_;
     bool hadRuntimeError_ = false;
+    bool echoOutput_ = true;
 
     std::atomic<bool> stopRequested_{false};  // см. requestStop()
 

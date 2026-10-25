@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #include "../src/codegen/Compiler.h"
@@ -65,6 +66,32 @@ void expectRuntimeErrorContaining(const std::string& name, const std::string& sr
         std::cerr << "\n";
     }
     CHECK(found);
+}
+
+// print() дублируется в stdout по умолчанию (консоль) и копится в printedLines() всегда; эхо можно выключить —
+// так делает C API, чтобы вывод программы не смешивался с выводом процесса-хозяина.
+void test_print_echo_to_stdout_is_switchable() {
+    const std::string src = "fn main() {\n    print(\"эхо\")\n}\n";
+    for (bool echo : {true, false}) {
+        Lexer lexer(src);
+        Parser parser(lexer.tokenize());
+        Program prog = parser.parseProgram();
+        Sema sema;
+        sema.analyze(prog);
+        BodyChecker checker(sema);
+        checker.checkProgram(prog);
+        Compiler compiler(sema);
+        VM vm(compiler.compileProgram(prog));
+        vm.setEchoOutput(echo);
+
+        std::ostringstream captured;
+        std::streambuf* old = std::cout.rdbuf(captured.rdbuf());
+        vm.run();
+        std::cout.rdbuf(old);
+
+        CHECK_EQ(captured.str(), echo ? std::string("эхо\n") : std::string());
+        CHECK_EQ(vm.printedLines().size(), static_cast<size_t>(1));
+    }
 }
 
 // --- Арифметика ---
@@ -273,6 +300,7 @@ int main() {
     test_int_arithmetic();
     test_int_double_widening();
     test_string_concat();
+    test_print_echo_to_stdout_is_switchable();
     test_division_by_zero_is_runtime_error();
 
     test_let_and_reassignment();

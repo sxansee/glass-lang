@@ -14,7 +14,9 @@ for t in lexer parser sema body_checker vm object exception introspection debug 
     code=0
     out=$("./build/tests/${t}_tests" 2>&1) || code=$?
     if [ "$code" -eq 0 ] && [ -n "$out" ]; then
-        printf '%s\n' "$out" | tail -n 1
+        # Итоговая строка — «N проверок, M провалено.»; ищем по форме, последняя строка вывода для этого не годится.
+        line=$(printf '%s\n' "$out" | grep -E '^[0-9]+[^0-9]+[0-9]+[^0-9]+$' | tail -n 1 || true)
+        printf '%s\n' "${line:-$(printf '%s\n' "$out" | tail -n 1)}"
     else
         echo "СБОЙ: код выхода $code, строк вывода: $(printf '%s\n' "$out" | grep -c '')"
         printf '%s\n' "$out" | sed 's/^/    /'

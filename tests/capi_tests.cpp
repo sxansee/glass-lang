@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -56,6 +57,23 @@ void test_run_and_get_output() {
     glass_free_string(output);
     CHECK(glass_has_error(s) == 0);
     glass_session_free(s);
+}
+
+// Сессия C API не дублирует print() в stdout процесса-хозяина: вывод забирают через glass_get_output.
+void test_run_does_not_echo_to_stdout() {
+    std::ostringstream captured;
+    std::streambuf* old = std::cout.rdbuf(captured.rdbuf());
+    GlassSession* s = glass_compile("fn main() { print(\"тихо\"); }\n", nullptr);
+    CHECK(s != nullptr);
+    if (s) glass_run(s);
+    std::cout.rdbuf(old);
+    CHECK_EQ(captured.str(), std::string(""));
+    if (s) {
+        char* output = glass_get_output(s);
+        CHECK_EQ(std::string(output), std::string("тихо"));
+        glass_free_string(output);
+        glass_session_free(s);
+    }
 }
 
 void test_runtime_error_is_reported() {
@@ -579,6 +597,7 @@ int main() {
     test_compile_null_source_is_safe();
 
     test_run_and_get_output();
+    test_run_does_not_echo_to_stdout();
     test_runtime_error_is_reported();
 
     test_breakpoint_pauses_and_current_line_matches();

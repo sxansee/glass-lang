@@ -130,6 +130,7 @@ namespace Glass.Studio.Tests
 
         private readonly Assembly _core;
         private readonly Func<string, bool> _localTypeExists;
+        private readonly Func<string, string, bool>? _localAttachedPropertyExists;
         private readonly HashSet<string> _appKeys;
         private readonly List<Type> _knownTypes;
 
@@ -141,10 +142,16 @@ namespace Glass.Studio.Tests
         /// <param name="coreAssembly">Glass.Studio.Core — откуда берутся типы ViewModel/моделей.</param>
         /// <param name="localTypeExists">Есть ли в самом WPF-проекте класс с таким именем (его reflection недоступна).</param>
         /// <param name="appResourceKeys">Ключи словарей уровня приложения (App.xaml → Themes/Glass.xaml).</param>
-        public XamlLinter(Assembly coreAssembly, Func<string, bool> localTypeExists, IEnumerable<string> appResourceKeys)
+        /// <param name="localAttachedPropertyExists">
+        /// Есть ли в WPF-проекте у класса-владельца (первый аргумент) attached-свойство с таким именем (второй):
+        /// RegisterAttached("Имя", ...). Без него существование свойств вида beh:Класс.Имя не проверяется.
+        /// </param>
+        public XamlLinter(Assembly coreAssembly, Func<string, bool> localTypeExists, IEnumerable<string> appResourceKeys,
+                          Func<string, string, bool>? localAttachedPropertyExists = null)
         {
             _core = coreAssembly;
             _localTypeExists = localTypeExists;
+            _localAttachedPropertyExists = localAttachedPropertyExists;
             _appKeys = new HashSet<string>(appResourceKeys);
             string[] namespaces = { "Glass.Studio.ViewModels", "Glass.Studio.Heap", "Glass.Studio.Models", "Glass.Studio.Examples" };
             _knownTypes = _core.GetExportedTypes().Where(t => t.Namespace != null && namespaces.Contains(t.Namespace) && !t.IsAbstract || t.IsEnum).ToList();
@@ -257,7 +264,11 @@ namespace Glass.Studio.Tests
                     continue;
                 }
                 if (attr.Name.Namespace == DesignNs) continue;
-                if (attr.Name.Namespace != XNamespace.None) continue;
+                if (attr.Name.Namespace != XNamespace.None)
+                {
+                    CheckPrefixedAttribute(el, attr, effective, st);
+                    continue;
+                }
 
                 if (st.Report && EventNames.Contains(attrName) && Markup.Parse(attr.Value) == null) CheckHandler(el, attr, st);
 
@@ -570,6 +581,66 @@ namespace Glass.Studio.Tests
         // ------------------------------------------------------------------ типы и статика
 
         /// <summary>«vm:MainViewModel» → Type. null — не найден (с ошибкой, если пространство имён проверяемое) или это тип WPF.</summary>
+        // Атрибут с префиксом пространства имён — attached-свойство из собственного класса: beh:RichTextBehavior.Source="{Binding Text}".
+        // Раньше такие атрибуты пропускались целиком, и опечатка в привязке молча давала пустое место на экране.
+        private void CheckPrefixedAttribute(XElement el, XAttribute attr, Type[]? context, FileState st)
+        {
+            string local = attr.Name.LocalName;
+            int dot = local.IndexOf('.');
+            if (dot <= 0) return;   // не attached-свойство (mc:Ignorable, xml:space ...)
+            Match uri = Regex.Match(attr.Name.NamespaceName, @"^clr-namespace:(?<ns>[^;]+)(;assembly=(?<asm>.+))?$");
+            if (!uri.Success) return;   // чужие схемы (WPF, Blend) — не проверяем
+
+            if (st.Report)
+            {
+                CheckAttachedProperty(el, local.Substring(0, dot), local.Substring(dot + 1), uri.Groups["ns"].Value,
+                                      uri.Groups["asm"].Success ? uri.Groups["asm"].Value : "", st);
+            }
+
+            Markup? markup = Markup.Parse(attr.Value);
+            if (markup == null) return;
+            switch (markup.LocalName)
+            {
+                case "Binding":
+                    CheckBinding(el, attr, markup, context, st);
+                    break;
+                case "StaticResource":
+                case "DynamicResource":
+                    CheckResourceRef(el, attr, markup, st);
+                    break;
+                case "Static":
+                    CheckStatic(el, markup, st);
+                    break;
+            }
+        }
+
+        private void CheckAttachedProperty(XElement el, string owner, string property, string ns, string assembly, FileState st)
+        {
+            string full = owner + "." + property;
+            if (assembly == "Glass.Studio.Core")
+            {
+                Type? type = _core.GetType(ns + "." + owner);
+                if (type == null)
+                {
+                    Error(st, el, "attached-свойство «" + full + "»: тип " + ns + "." + owner + " не найден в Glass.Studio.Core");
+                    return;
+                }
+                if (type.GetField(property + "Property", BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy) == null)
+                    Error(st, el, "attached-свойство «" + full + "»: у типа " + owner + " нет публичного статического поля " + property + "Property");
+                return;
+            }
+            if (assembly == "" && ns.StartsWith("Glass.Studio", StringComparison.Ordinal) && _localAttachedPropertyExists != null)
+            {
+                if (!_localTypeExists(owner))
+                {
+                    Error(st, el, "attached-свойство «" + full + "»: тип " + owner + " не найден в исходниках Glass.Studio (WPF-проект)");
+                    return;
+                }
+                if (!_localAttachedPropertyExists(owner, property))
+                    Error(st, el, "attached-свойство «" + full + "» не найдено: в классе " + owner + " нет RegisterAttached(\"" + property + "\", ...)");
+            }
+        }
+
         private Type? ResolveTypeToken(XElement scope, string token, FileState st, bool report)
         {
             string prefix = "", name = token.Trim();

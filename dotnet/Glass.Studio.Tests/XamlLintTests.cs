@@ -29,6 +29,7 @@ namespace Glass.Studio.Tests
             Add("WPF: XAML проекта — линтер без замечаний", LintRealFiles);
             Add("WPF: линтер ловит заведомо битый XAML (самопроверка)", LintCatchesBrokenXaml);
             Add("WPF: линтер не ругается на корректный XAML (самопроверка)", LintAcceptsGoodXaml);
+            Add("WPF: линтер проверяет привязки и существование attached-свойств с префиксом (самопроверка)", LintChecksAttachedProperties);
             Add("WPF: линтер ловит ошибки, внесённые в НАСТОЯЩИЕ файлы (мутации)", LintCatchesMutations);
             Add("WPF: Glass.xshd валиден по схеме AvalonEdit, ключевые слова = лексер", HighlightingMatchesLexer);
             Add("WPF: csproj — ресурс подсветки, пакет редактора, копирование DLL", ProjectFile);
@@ -60,9 +61,15 @@ namespace Glass.Studio.Tests
             string allSources = string.Join("\n", Directory.EnumerateFiles(wpfDir, "*.cs", SearchOption.AllDirectories)
                 .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
                 .Select(File.ReadAllText));
+            List<string> sources = Directory.EnumerateFiles(wpfDir, "*.cs", SearchOption.AllDirectories)
+                .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar))
+                .Select(File.ReadAllText).ToList();
             return new XamlLinter(typeof(MainViewModel).Assembly,
                 name => Regex.IsMatch(allSources, @"\b(class|struct|enum|interface)\s+" + Regex.Escape(name) + @"\b"),
-                appKeys);
+                appKeys,
+                // attached-свойство существует: в файле с классом-владельцем есть RegisterAttached("Имя", ...)
+                (owner, property) => sources.Any(text => Regex.IsMatch(text, @"\bclass\s+" + Regex.Escape(owner) + @"\b") &&
+                                                         Regex.IsMatch(text, @"RegisterAttached(ReadOnly)?\(\s*""" + Regex.Escape(property) + @"""")));
         }
 
         // ------------------------------------------------------------------ настоящие файлы
@@ -188,6 +195,38 @@ namespace Glass.Studio.Tests
             foreach (string fragment in expected) CheckContains(joined, fragment, "линтер обязан поймать: " + fragment);
         }
 
+        private static IReadOnlyList<string> LintWithAttached(string xaml)
+        {
+            var linter = new XamlLinter(typeof(MainViewModel).Assembly, name => name == "GoodBehavior", new[] { "AppBrush" },
+                                        (owner, property) => owner == "GoodBehavior" && property == "Good");
+            return linter.Lint("scratch.xaml", XDocument.Parse(xaml, LoadOptions.SetLineInfo), "");
+        }
+
+        private static void LintChecksAttachedProperties()
+        {
+            const string attachedHeader = Header + " xmlns:b=\"clr-namespace:Glass.Studio.Behaviors\"";
+            string good =
+                "<Window x:Class=\"T.W\" " + attachedHeader + " d:DataContext=\"{d:DesignInstance Type=vm:MainViewModel}\">\n" +
+                "  <TextBlock b:GoodBehavior.Good=\"{Binding StatusText}\" />\n" +
+                "</Window>";
+            CheckEqual(0, LintWithAttached(good).Count, "корректное attached-свойство и привязка проходят");
+
+            CheckContains(string.Join("\n", LintWithAttached(good.Replace("StatusText", "StatusTextt"))),
+                          "нет публичного свойства «StatusTextt»", "опечатка в привязке через attached-свойство");
+            CheckContains(string.Join("\n", LintWithAttached(good.Replace("GoodBehavior.Good", "GoodBehavior.Goodd"))),
+                          "attached-свойство «GoodBehavior.Goodd»", "несуществующее attached-свойство");
+            CheckContains(string.Join("\n", LintWithAttached(good.Replace("GoodBehavior.Good", "NoSuchBehavior.Good"))),
+                          "тип NoSuchBehavior не найден", "несуществующий класс-владелец");
+            CheckContains(string.Join("\n", LintWithAttached(good.Replace("{Binding StatusText}", "{StaticResource NoSuchBrush}"))),
+                          "ресурс не найден", "несуществующий ресурс в attached-атрибуте");
+
+            // Чужие схемы и атрибуты без точки (mc:Ignorable, xml:space) не трогаем.
+            string foreign =
+                "<Window x:Class=\"T.W\" " + attachedHeader + " xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\" " +
+                "mc:Ignorable=\"d\" d:DataContext=\"{d:DesignInstance Type=vm:MainViewModel}\" />";
+            CheckEqual(0, LintWithAttached(foreign).Count, "чужие схемы и атрибуты без точки не проверяются");
+        }
+
         private static void LintAcceptsGoodXaml()
         {
             string xaml =
@@ -234,6 +273,16 @@ namespace Glass.Studio.Tests
 
             (string File, string Old, string New, string Expected)[] mutations =
             {
+                // Окно курса: привязки через attached-свойство RichTextBehavior.Source, шаблоны блоков теории, список уроков, конвертер, обработчик.
+                ("CourseWindow.xaml", "beh:RichTextBehavior.Source=\"{Binding TaskText}\"", "beh:RichTextBehavior.Source=\"{Binding TaskTextt}\"", "нет публичного свойства «TaskTextt»"),
+                ("CourseWindow.xaml", "<TextBlock Style=\"{StaticResource LessonText}\" beh:RichTextBehavior.Source=\"{Binding Text}\" />", "<TextBlock Style=\"{StaticResource LessonText}\" beh:RichTextBehavior.Source=\"{Binding Textt}\" />", "нет публичного свойства «Textt»"),
+                ("CourseWindow.xaml", "beh:RichTextBehavior.Source=\"{Binding TaskText}\"", "beh:RichTextBehavior.Sourse=\"{Binding TaskText}\"", "attached-свойство «RichTextBehavior.Sourse»"),
+                ("CourseWindow.xaml", "<TextBlock Style=\"{StaticResource LessonCodeText}\" Text=\"{Binding Code}\" />", "<TextBlock Style=\"{StaticResource LessonCodeText}\" Text=\"{Binding Codee}\" />", "нет публичного свойства «Codee»"),
+                ("CourseWindow.xaml", "Command=\"{Binding SelectCommand}\"", "Command=\"{Binding SelectCommnad}\"", "нет публичного свойства «SelectCommnad»"),
+                ("CourseWindow.xaml", "Visibility=\"{Binding ShowWelcome, Converter={StaticResource BoolToVisibility}}\"", "Visibility=\"{Binding ShowWelcome}\"", "Visibility без Converter"),
+                ("CourseWindow.xaml", "Click=\"OnResetProgress\"", "Click=\"OnResetProgres\"", "не найден в code-behind"),
+                ("MainWindow.xaml", "<TabItem Header=\"Журнал\">\n                            <DockPanel DataContext=\"{Binding LogPanel}\">", "<TabItem Header=\"Журнал\">\n                            <DockPanel DataContext=\"{Binding LogPanell}\">", "нет публичного свойства «LogPanell»"),
+                ("MainWindow.xaml", "{Binding MinLevelIndex, Mode=TwoWay}", "{Binding MinLevelIndx, Mode=TwoWay}", "нет публичного свойства «MinLevelIndx»"),
                 ("Views/HeapGraphView.xaml", "{Binding IsFromGarbage}", "{Binding IsFromGarbge}", "нет публичного свойства «IsFromGarbge»"),
                 ("Views/HeapGraphView.xaml", "StaticResource EdgePathStyle}", "StaticResource EdgePathStyl}", "ресурс не найден"),
                 ("Views/HeapGraphView.xaml", "<DataTemplate DataType=\"{x:Type heap:HeapEdgeModel}\">", "<DataTemplate DataType=\"{x:Type heap:HeapNodeModel}\">", "DataTemplate.DataType = HeapNodeModel"),

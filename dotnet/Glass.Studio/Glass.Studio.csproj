@@ -4,9 +4,8 @@
        Вся логика (отладчик, куча, ViewModel, раскладка схемы) живёт в Glass.Studio.Core и
        проверена тестами против живой библиотеки.
 
-       ВАЖНО: этот проект писался в Linux-контейнере, где нет ни Windows, ни WPF-пакетов,
-       поэтому он ни разу не компилировался. Что и как проверено — dotnet/README.md,
-       раздел «Первая сборка». -->
+       Проект писался в Linux-контейнере, где нет Windows и WPF-пакетов, поэтому его собирает CI на Windows
+       (.github/workflows/ci.yml); XAML дополнительно проверяет линтер из Glass.Studio.Tests. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>

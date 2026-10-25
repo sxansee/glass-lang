@@ -19,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
@@ -33,19 +33,21 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Сборка (MSVC) и все тесты (scripts/test-all.ps1)
         shell: pwsh
         run: ./scripts/test-all.ps1
 
-      - name: Сборка WPF-оболочки (dotnet/Glass.sln)
+      - name: Сборка WPF-оболочки (dotnet/Glass.slnx)
         if: ${{ !cancelled() }}
-        run: dotnet build dotnet/Glass.sln -c Release --nologo
+        run: dotnet build dotnet/Glass.slnx -c Release --nologo
 
       - name: glass_capi.dll лежит рядом с GlassStudio.exe
         shell: pwsh

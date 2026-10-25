@@ -10,6 +10,7 @@
 # Windows-файлы — CRLF.
 *.ps1   text eol=crlf
 *.sln   text eol=crlf
+*.slnx  text eol=crlf
 
 # Бинарные файлы.
 *.png   binary

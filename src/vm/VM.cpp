@@ -1186,7 +1186,7 @@ VM::StepOutcome VM::executeOneInstruction() {
                     if (i > 0) text += " ";
                     text += valueToDisplayString(printed[i]);
                 }
-                std::cout << text << "\n";
+                if (echoOutput_) std::cout << text << "\n";
                 output_.push_back(text);
                 push(Value{std::monostate{}});
                 frame.ip++;

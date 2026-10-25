@@ -85,7 +85,13 @@
                 <MenuItem Header="Уменьшить схему кучи" Command="{Binding ZoomOutCommand}" InputGestureText="Ctrl+-" />
                 <MenuItem Header="Масштаб 100%" Command="{Binding ResetZoomCommand}" InputGestureText="Ctrl+0" />
             </MenuItem>
+            <MenuItem Header="_Курс по Glass" Click="OnOpenCourse" FontWeight="SemiBold"
+                      Foreground="{StaticResource AccentBrush}"
+                      ToolTip="Интерактивный курс: теория, примеры и задачи с проверкой" />
             <MenuItem Header="_Справка">
+                <MenuItem Header="Исходный код и документация (GitHub)" Click="OnOpenProjectPage" />
+                <MenuItem Header="Открыть папку _журналов" Click="OnOpenLogFolder" />
+                <Separator />
                 <MenuItem Header="О программе" Click="OnAbout" />
             </MenuItem>
         </Menu>
@@ -153,6 +159,13 @@
                     <StackPanel Orientation="Horizontal">
                         <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconTrash}" Stroke="#6D3FC4" />
                         <TextBlock Style="{StaticResource ToolButtonText}" Text="Собрать мусор" />
+                    </StackPanel>
+                </Button>
+                <Separator />
+                <Button Click="OnOpenCourse" ToolTip="Интерактивный курс по языку: теория, примеры и задачи с проверкой">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Style="{StaticResource ToolIcon}" Data="{StaticResource IconCourse}" Stroke="#2563EB" />
+                        <TextBlock Style="{StaticResource ToolButtonText}" Text="Курс по Glass" />
                     </StackPanel>
                 </Button>
             </ToolBar>
@@ -281,6 +294,52 @@
                                     </TextBlock.Style>
                                 </TextBlock>
                             </Grid>
+                        </TabItem>
+                        <TabItem Header="Журнал">
+                            <DockPanel DataContext="{Binding LogPanel}">
+                                <Border DockPanel.Dock="Top" Background="{StaticResource PanelHeaderBrush}"
+                                        BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,0,0,1" Padding="8,4">
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Command="{Binding ClearCommand}" Content="Очистить" Padding="10,2" Margin="6,0,0,0"
+                                                ToolTip="Убрать записи из списка (файлы журнала не удаляются)" />
+                                        <Button DockPanel.Dock="Right" Command="{Binding OpenFolderCommand}" Content="Открыть папку" Padding="10,2"
+                                                ToolTip="Открыть папку с файлами журнала в проводнике" />
+                                        <ComboBox DockPanel.Dock="Left" SelectedIndex="{Binding MinLevelIndex, Mode=TwoWay}" Width="230" VerticalAlignment="Center">
+                                            <ComboBoxItem Content="Показывать всё (с отладочными)" />
+                                            <ComboBoxItem Content="Информация и выше" />
+                                            <ComboBoxItem Content="Предупреждения и ошибки" />
+                                            <ComboBoxItem Content="Только ошибки" />
+                                        </ComboBox>
+                                        <TextBlock Text="{Binding Summary}" Style="{StaticResource MutedText}" Margin="10,0" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                </Border>
+                                <ListView x:Name="LogList" ItemsSource="{Binding Entries}" BorderThickness="0"
+                                          FontFamily="{StaticResource MonoFont}" FontSize="12">
+                                    <ListView.ItemContainerStyle>
+                                        <Style TargetType="ListViewItem">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsError}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource GarbageBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsWarning}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource ChangedBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsDebug}" Value="True">
+                                                    <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </ListView.ItemContainerStyle>
+                                    <ListView.View>
+                                        <GridView>
+                                            <GridViewColumn Header="Время" Width="100" DisplayMemberBinding="{Binding TimeText}" />
+                                            <GridViewColumn Header="Уровень" Width="95" DisplayMemberBinding="{Binding LevelText}" />
+                                            <GridViewColumn Header="Источник" Width="110" DisplayMemberBinding="{Binding Source}" />
+                                            <GridViewColumn Header="Сообщение" Width="620" DisplayMemberBinding="{Binding Message}" />
+                                        </GridView>
+                                    </ListView.View>
+                                </ListView>
+                            </DockPanel>
                         </TabItem>
                     </TabControl>
                 </Border>

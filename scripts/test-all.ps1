@@ -28,7 +28,12 @@ foreach ($t in 'lexer','parser','sema','body_checker','vm','object','exception',
     $ErrorActionPreference = $previous
 
     if ($code -eq 0 -and $out.Count -gt 0) {
-        Write-Host ("{0,-14} {1}" -f $t, ($out | Select-Object -Last 1))
+        # Итоговая строка — «N проверок, M провалено.»; ищем её по форме (цифры, текст, цифры, текст), а не по русским
+        # словам: так не зависим от кодировки консоли. Последняя строка вывода не годится: часть вывода (печать программ на
+        # Glass из glass_capi.dll) сбрасывается другим буфером и может оказаться уже после итога.
+        $summary = $out | Where-Object { $_ -match '^\d+\D+\d+\D+$' } | Select-Object -Last 1
+        if (-not $summary) { $summary = $out | Select-Object -Last 1 }
+        Write-Host ("{0,-14} {1}" -f $t, $summary)
     } else {
         # 0xC0000135 — не найдена DLL, 0xC0000005 — обращение к недоступной памяти (крах).
         $hex = '{0:X8}' -f $code

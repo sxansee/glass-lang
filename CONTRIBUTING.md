@@ -16,7 +16,7 @@ Glass — учебный язык, поэтому для проекта особ
 
 Скрипт собирает C++-часть (CMake), прогоняет все **одиннадцать** C++-наборов (`tests/`) и .NET-тесты ядра IDE против
 живой `glass_capi`. Нужны: CMake ≥ 3.16, компилятор C++17 (gcc, clang или MSVC) и .NET SDK 8. WPF-оболочка
-(`dotnet/Glass.Studio`) собирается только на Windows: `dotnet build dotnet/Glass.sln -c Release`.
+(`dotnet/Glass.Studio`) собирается только на Windows: `dotnet build dotnet/Glass.slnx -c Release` (формат `.slnx` читает .NET SDK 9.0.200 и новее; сами проекты собираются и на SDK 8, а скрипты `test-all.*` решение не используют).
 
 Перед pull request:
 

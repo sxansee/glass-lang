@@ -79,7 +79,7 @@ dotnet run -c Release -- мутации       # только тесты, в на
 1. Собрать `glass_capi.dll`: `cmake --build build --config Release --target glass_capi` (или открыть папку в
    Visual Studio и выполнить **Сборка → Собрать всё** — x64!). DLL только собирают: назначить её элементом
    запуска нельзя — Visual Studio ответит «Отсутствует исполняемый файл цели» (это не ошибка сборки).
-2. Открыть `dotnet/Glass.sln` в Visual Studio 2022 (нужен .NET 8 SDK и рабочая нагрузка «Разработка классических
+2. Открыть `dotnet/Glass.slnx` в Visual Studio 2022 версии 17.14 или новее, либо в Visual Studio 2026 (формат `.slnx` — современная замена `.sln`; нужен .NET 8 SDK и рабочая нагрузка «Разработка классических
    приложений .NET»), выбрать проект `Glass.Studio` запускаемым, **F5**.
 3. Сборка сама копирует `glass_capi.dll` рядом с `GlassStudio.exe` (ищет в `build\<Config>`, `build\`,
    `out\build\x64-<Config>`; своё место: `-p:GlassNativeDll=C:\путь\glass_capi.dll`). Не нашла — выдаст предупреждение сборки.
@@ -90,7 +90,7 @@ dotnet run -c Release -- мутации       # только тесты, в на
 
 | Сообщение | Что значит |
 |---|---|
-| Visual Studio: «Отсутствует исполняемый файл цели… для цели glass_capi.dll» | выбрана для запуска библиотека; её нужно собрать (**Сборка → Собрать всё**), а запускать проект `Glass.Studio` из `Glass.sln` |
+| Visual Studio: «Отсутствует исполняемый файл цели… для цели glass_capi.dll» | выбрана для запуска библиотека; её нужно собрать (**Сборка → Собрать всё**), а запускать проект `Glass.Studio` из `Glass.slnx` |
 | Предупреждение сборки «glass_capi.dll не найдена» | C++-часть не собрана или собрана в другой конфигурации: Debug ищет `out\build\x64-Debug`, Release — `out\build\x64-Release` (и `build\<Config>`); либо укажите путь: `-p:GlassNativeDll=C:\путь\glass_capi.dll` |
 | Окно при запуске «Не найдена нативная библиотека glass_capi.dll» | то же самое: DLL не лежит рядом с `GlassStudio.exe` |
 | «Библиотека собрана под другую разрядность» | `glass_capi.dll` собрана как x86; пересоберите как x64 |

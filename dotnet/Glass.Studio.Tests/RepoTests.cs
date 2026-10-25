@@ -22,6 +22,7 @@ namespace Glass.Studio.Tests
             Add("репозиторий: workflow ссылаются на существующие скрипты и проекты", WorkflowReferences);
             Add("репозиторий: test-all.* запускают все C++-наборы из tests/CMakeLists.txt", ScriptsCoverAllSuites);
             Add("репозиторий: тесты, линкуемые с glass_capi, получают DLL рядом с exe (на Windows нет RPATH)", DllNextToTests);
+            Add("репозиторий: решение dotnet/Glass.slnx перечисляет все проекты; старого .sln и ссылок на него нет", SolutionFile);
         }
 
         private static string? FindRoot()
@@ -115,11 +116,34 @@ namespace Glass.Studio.Tests
             {
                 string text = Read(workflow);
                 Check(text.Length > 0, workflow + ": файл не пуст");
-                var paths = Regex.Matches(text, @"(?:\./)?((?:scripts|dotnet)/[\w./-]+\.(?:sh|ps1|sln|csproj|props))")
+                var paths = Regex.Matches(text, @"(?:\./)?((?:scripts|dotnet)/[\w./-]+\.(?:sh|ps1|slnx?|csproj|props))")
                                  .Select(m => m.Groups[1].Value).Distinct().ToList();
                 Check(paths.Count > 0, workflow + ": найдены ссылки на файлы репозитория");
                 foreach (string path in paths) Check(Exists(path), workflow + " ссылается на существующий " + path);
             }
+        }
+
+        // ------------------------------------------------------------------ решение .slnx
+
+        private static void SolutionFile()
+        {
+            string oldName = "Glass" + ".sln";   // склеено, чтобы сам тест не считался «ссылкой на старое решение»
+            Check(Exists("dotnet/Glass.slnx"), "есть dotnet/Glass.slnx");
+            Check(!Exists("dotnet/" + oldName), "старого dotnet/" + oldName + " нет (два решения — путаница)");
+
+            string root = FindRoot()!;
+            string dotnetDir = Path.Combine(root, "dotnet");
+            var inSolution = Regex.Matches(Read("dotnet/Glass.slnx"), @"<Project\s+Path=""([^""]+)""")
+                                  .Select(m => m.Groups[1].Value.Replace('\\', '/')).OrderBy(p => p, StringComparer.Ordinal).ToList();
+            var onDisk = Directory.EnumerateFiles(dotnetDir, "*.csproj", SearchOption.AllDirectories)
+                                  .Where(f => !f.Contains(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar) &&
+                                              !f.Contains(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar))
+                                  .Select(f => Path.GetRelativePath(dotnetDir, f).Replace('\\', '/')).OrderBy(p => p, StringComparer.Ordinal).ToList();
+            CheckEqual(string.Join(", ", onDisk), string.Join(", ", inSolution), "проекты в Glass.slnx = проекты на диске");
+
+            var stale = TextFiles(root).Where(f => Regex.IsMatch(File.ReadAllText(f), @"Glass\.sln\b(?!x)"))
+                                       .Select(f => Path.GetRelativePath(root, f)).ToList();
+            CheckEqual("", string.Join(", ", stale), "документы и CI ссылаются на Glass.slnx, а не на старое решение");
         }
 
         // ------------------------------------------------------------------ DLL рядом с тестами

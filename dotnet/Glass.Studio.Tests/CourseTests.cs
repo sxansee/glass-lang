@@ -26,6 +26,7 @@ namespace Glass.Studio.Tests
             Add("курс: прогресс — сохранение, повреждённый файл", ProgressStore);
             Add("курс: окно курса — сценарий ученика целиком", ViewModelFlow);
             Add("курс: подсказки, решение, звёзды, навигация, сброс", ViewModelDetails);
+            Add("курс: список уроков (своя команда у строки) и подпись кнопки «Начать/Продолжить/Повторить»", ListAndStartButton);
         }
 
         private sealed class FakeCourseHost : ICourseHost
@@ -265,6 +266,54 @@ namespace Glass.Studio.Tests
                 File.WriteAllText(blocker, "файл вместо каталога");
                 Check(!new CourseProgressStore(Path.Combine(blocker, "p.json")).Save(new CourseProgress()), "запись невозможна — false, без исключения");
                 File.Delete(blocker);
+            }
+            finally
+            {
+                foreach (string f in new[] { path, path + ".bad", path + ".tmp" }) if (File.Exists(f)) File.Delete(f);
+            }
+        }
+
+        // ------------------------------------------------------------------ список уроков и кнопка «Начать»
+
+        private static void ListAndStartButton()
+        {
+            string path = TempFile();
+            try
+            {
+                var host = new FakeCourseHost();
+                var vm = new CourseViewModel(new CourseProgressStore(path), host);
+                CheckEqual("Начать курс", vm.StartText, "пока ничего не пройдено");
+
+                // Строка урока в списке выбирает его собственной командой — так WPF-список работает без кода в окне.
+                LessonItem third = vm.AllLessons[2];
+                Check(third.SelectCommand.CanExecute(null), "команда строки доступна");
+                third.SelectCommand.Execute(null);
+                Check(ReferenceEquals(vm.SelectedLesson, third), "команда выбрала свой урок");
+                Check(third.IsSelected && !vm.AllLessons[0].IsSelected, "выбран ровно один урок");
+
+                // Пройден один урок — кнопка зовёт продолжить.
+                var some = new CourseProgress();
+                LessonRecord first = some.Record(vm.AllLessons[0].Lesson.Id);
+                first.Completed = true;
+                first.Stars = 3;
+                new CourseProgressStore(path).Save(some);
+                var partial = new CourseViewModel(new CourseProgressStore(path), host);
+                CheckEqual("Продолжить курс", partial.StartText, "часть уроков пройдена");
+
+                // Пройдено всё — «Повторить с начала», а старт открывает первый урок.
+                var every = new CourseProgress();
+                foreach (Lesson lesson in CourseCatalog.Chapters.SelectMany(c => c.Lessons))
+                {
+                    LessonRecord record = every.Record(lesson.Id);
+                    record.Completed = true;
+                    record.Stars = 3;
+                }
+                new CourseProgressStore(path).Save(every);
+                var done = new CourseViewModel(new CourseProgressStore(path), host);
+                Check(done.IsAllDone, "все уроки пройдены");
+                CheckEqual("Повторить с начала", done.StartText, "курс пройден");
+                done.StartCommand.Execute(null);
+                CheckEqual("1.1", done.SelectedLesson!.NumberText, "повтор начинается с первого урока");
             }
             finally
             {

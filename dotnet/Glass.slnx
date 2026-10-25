@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Glass.Interop/Glass.Interop.csproj" />
+  <Project Path="Glass.Studio.Core/Glass.Studio.Core.csproj" />
+  <Project Path="Glass.Studio.Tests/Glass.Studio.Tests.csproj" />
+  <Project Path="Glass.Studio/Glass.Studio.csproj" />
+</Solution>

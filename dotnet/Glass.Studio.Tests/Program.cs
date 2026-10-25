@@ -28,6 +28,8 @@ namespace Glass.Studio.Tests
             CourseTests.Register();
             CodeInfoTests.Register();
             RepoTests.Register();
+            ShellTests.Register();
+            DocsTests.Register();
 
             // dotnet run ... -- <часть имени теста> — прогнать только подходящие.
             return await TestKit.RunAllAsync(args.Length > 0 ? args[0] : null);

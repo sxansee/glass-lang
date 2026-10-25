@@ -187,6 +187,7 @@ GLASS_API GlassSession* glass_compile(const char* source, char** error_out) {
 
     auto* session = new GlassSession();
     session->vm = std::make_unique<VM>(std::move(compiled));
+    session->vm->setEchoOutput(false);   // вывод забирают через glass_get_output; в stdout хозяина он не нужен
     return session;
 }
 
