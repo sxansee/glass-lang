@@ -832,6 +832,473 @@ mold Leaf : Base { fn who() -> string { return "leaf" } }
 fn main() { })GL", "добавьте override");
 }
 
+// ---------------------------------------------------------------------
+// «Все пути возвращают значение»: функция с '-> тип' обязана вернуть значение на любой ветке
+// ---------------------------------------------------------------------
+
+void test_all_paths_return() {
+    // Допустимые формы: программа компилируется и считает правильно.
+    expectOutput("return_if_else_if_else_chain", R"GL(
+fn sign(x: int) -> int {
+    if x > 0 {
+        return 1
+    } else if x < 0 {
+        return -1
+    } else {
+        return 0
+    }
+}
+fn main() { print(sign(5), sign(-3), sign(0)) })GL", {"1 -1 0"});
+
+    expectOutput("return_after_if_is_enough", R"GL(
+fn pick(x: int) -> int {
+    if x > 0 { return 1 }
+    return 0
+}
+fn main() { print(pick(4), pick(-4)) })GL", {"1 0"});
+
+    expectOutput("return_while_true_with_return_inside", R"GL(
+fn firstOver(limit: int) -> int {
+    let i = 0
+    while true {
+        if i * i > limit { return i }
+        i += 1
+    }
+}
+fn main() { print(firstOver(50)) })GL", {"8"});
+
+    // break вложенного for относится к for, а не к while true: цикл по-прежнему бесконечен.
+    expectOutput("return_inner_loop_break_is_not_ours", R"GL(
+fn find(xs: [int], target: int) -> int {
+    while true {
+        for x in xs {
+            if x == target { break }
+        }
+        return 7
+    }
+}
+fn main() { print(find([1, 2, 3], 2)) })GL", {"7"});
+
+    expectOutput("return_try_and_all_catches_return", R"GL(
+mold Boom : Exception {
+    Boom(msg: string) { super(msg) }
+}
+fn risky(x: int) {
+    if x > 2 { throw Boom("big") }
+}
+fn tryIt(x: int) -> string {
+    try {
+        risky(x)
+        return "ok"
+    } catch e: Boom {
+        return "caught " + e.message
+    }
+}
+fn main() { print(tryIt(1), tryIt(5)) })GL", {"ok caught big"});
+
+    expectOutput("return_throw_at_the_end", R"GL(
+fn fail(msg: string) -> int {
+    throw Exception(msg)
+}
+fn main() {
+    try {
+        print(fail("не получилось"))
+    } catch e: Exception {
+        print("поймано:", e.message)
+    }
+})GL", {"поймано: не получилось"});
+
+    expectOutput("return_in_method_all_branches", R"GL(
+mold Shape {
+    let sides: int
+    Shape(n: int) { sides = n }
+    fn kind() -> string {
+        if sides == 3 {
+            return "треугольник"
+        } else if sides == 4 {
+            return "четырёхугольник"
+        } else {
+            return "многоугольник"
+        }
+    }
+}
+fn main() { print(Shape(3).kind(), Shape(4).kind(), Shape(9).kind()) })GL",
+                 {"треугольник четырёхугольник многоугольник"});
+
+    // Ничего не возвращающие функции, методы и конструкторы проверка не касается.
+    expectOutput("return_void_function_unaffected", R"GL(
+mold Box {
+    let n: int
+    Box(v: int) { if v > 0 { n = v } }
+    fn show() { if n > 0 { print("n =", n) } }
+}
+fn g(x: int) { if x > 0 { print("g", x) } }
+fn main() { g(2)
+    Box(3).show() })GL", {"g 2", "n = 3"});
+
+    // Недопустимые формы.
+    const std::string expected = "не все ветки функции 'pick' возвращают значение типа int";
+    expectError("return_missing_if_without_else", R"GL(
+fn pick(x: int) -> int {
+    if x > 0 { return 1 }
+}
+fn main() { print(pick(1)) })GL", expected);
+
+    expectError("return_missing_else_if_chain_without_else", R"GL(
+fn pick(x: int) -> int {
+    if x > 0 { return 1 } else if x < 0 { return -1 }
+}
+fn main() { print(pick(1)) })GL", expected);
+
+    expectError("return_missing_else_branch_does_not_return", R"GL(
+fn pick(x: int) -> int {
+    if x > 0 { return 1 } else { print("нет") }
+}
+fn main() { print(pick(1)) })GL", expected);
+
+    expectError("return_missing_for_may_not_run", R"GL(
+fn pick(xs: [int]) -> int {
+    for x in xs { return x }
+}
+fn main() { print(pick([1])) })GL", "не все ветки функции 'pick' возвращают значение типа int");
+
+    expectError("return_missing_while_with_condition", R"GL(
+fn pick(x: int) -> int {
+    while x > 0 { return 1 }
+}
+fn main() { print(pick(1)) })GL", expected);
+
+    expectError("return_missing_while_true_with_break", R"GL(
+fn pick(x: int) -> int {
+    while true {
+        if x > 0 { break }
+        return 5
+    }
+}
+fn main() { print(pick(1)) })GL", expected);
+
+    expectError("return_missing_break_inside_try_in_loop", R"GL(
+fn pick(x: int) -> int {
+    while true {
+        try {
+            if x > 0 { break }
+        } catch e: Exception {
+            return 2
+        }
+    }
+}
+fn main() { print(pick(1)) })GL", expected);
+
+    expectError("return_missing_catch_does_not_return", R"GL(
+fn pick(x: int) -> int {
+    try {
+        return 1
+    } catch e: Exception {
+        print("ошибка")
+    }
+}
+fn main() { print(pick(1)) })GL", expected);
+
+    expectError("return_missing_try_does_not_return", R"GL(
+fn pick(x: int) -> int {
+    try {
+        print("почти")
+    } catch e: Exception {
+        return 2
+    }
+}
+fn main() { print(pick(1)) })GL", expected);
+
+    expectError("return_missing_empty_body", R"GL(
+fn pick(x: int) -> int { }
+fn main() { print(pick(1)) })GL", expected);
+
+    // В методе сообщение называет и метод, и mold.
+    expectError("return_missing_in_method", R"GL(
+mold Account {
+    let balance: int
+    Account(b: int) { balance = b }
+    fn level() -> string {
+        if balance > 100 { return "high" }
+    }
+}
+fn main() { print(Account(5).level()) })GL",
+                "не все ветки метода 'level' mold'а 'Account' возвращают значение типа string");
+
+    // Сообщение показывает тип результата — в том числе массив и свой mold.
+    expectError("return_missing_names_array_type", R"GL(
+fn evens(n: int) -> [int] {
+    if n > 0 { return [2] }
+}
+fn main() { print(evens(1)) })GL", "возвращают значение типа [int]");
+}
+
+// ---------------------------------------------------------------------
+// Модификаторы доступа: private, protected, public
+// ---------------------------------------------------------------------
+
+void test_access_modifiers() {
+    // Инкапсуляция работает и при этом программа делает своё дело.
+    expectOutput("access_encapsulated_account", R"GL(
+mold Account {
+    private let balance: int
+    Account(initial: int) { balance = initial }
+    fn deposit(amount: int) { balance += amount }
+    fn current() -> int { return balance }
+}
+fn main() {
+    let a = Account(100)
+    a.deposit(50)
+    print(a.current())
+})GL", {"150"});
+
+    // Другой экземпляр того же mold'а — «свой»: можно и читать, и писать его private-поле.
+    expectOutput("access_private_through_other_instance", R"GL(
+mold Money {
+    private let cents: int
+    Money(c: int) { cents = c }
+    fn moreThan(other: Money) -> bool { return cents > other.cents }
+    fn takeFrom(other: Money) { cents += other.cents
+        other.cents = 0 }
+    fn show() -> int { return cents }
+}
+fn main() {
+    let a = Money(500)
+    let b = Money(300)
+    print(a.moreThan(b), b.moreThan(a))
+    b.takeFrom(a)
+    print(a.show(), b.show())
+})GL", {"true false", "0 800"});
+
+    // protected: потомок видит и поле, и метод — и по простому имени, и через this/super.
+    expectOutput("access_protected_in_descendant", R"GL(
+mold Animal {
+    protected let name: string
+    Animal(n: string) { name = n }
+    protected fn sound() -> string { return "..." }
+}
+mold Dog : Animal {
+    Dog(n: string) { super(n) }
+    fn speak() -> string { return name + " says " + this.sound() + super.sound() }
+}
+fn main() { print(Dog("Rex").speak()) })GL", {"Rex says ......"});
+
+    // private-метод — рабочий «внутренний» помощник открытого метода.
+    expectOutput("access_private_helper_method", R"GL(
+mold Counter {
+    private let n: int
+    Counter() { n = 0 }
+    private fn bump() { n += 1 }
+    fn tick() -> int {
+        this.bump()
+        this.bump()
+        return n
+    }
+}
+fn main() { print(Counter().tick()) })GL", {"2"});
+
+    // Явный public и отсутствие модификатора — одно и то же: открыто всем.
+    expectOutput("access_public_and_unmarked_are_open", R"GL(
+mold P {
+    public let a: int
+    let b: int
+    P() { a = 1
+        b = 2 }
+    public fn f() -> int { return 10 }
+    fn g() -> int { return 20 }
+}
+fn main() {
+    let p = P()
+    p.a = p.a + 5
+    print(p.a, p.b, p.f(), p.g())
+})GL", {"6 2 10 20"});
+
+    // Частное поле предка не перекрывает одноимённую функцию в потомке: потомок его просто не видит.
+    expectOutput("access_private_field_does_not_hide_function", R"GL(
+fn count() -> int { return 7 }
+mold A {
+    private let count: int
+    A() { count = 1 }
+}
+mold B : A {
+    fn f() -> int { return count() }
+}
+fn main() { print(B().f()) })GL", {"7"});
+
+    // Инспекция показывает все поля независимо от доступа: ~layout — инструмент, а не обход инкапсуляции.
+    expectOutput("access_layout_shows_private_fields", R"GL(
+mold P {
+    private let secret: int
+    protected let hidden: int
+    P() { secret = 42
+        hidden = 1 }
+}
+fn main() { print(P()~layout) })GL", {"layout(P): secret@0 (8 байт), hidden@1 (8 байт)"});
+
+    // Исключения: поле message стандартного Exception — открытое.
+    expectOutput("access_exception_message_is_public", R"GL(
+mold Boom : Exception {
+    private let code: int
+    Boom(m: string, c: int) { super(m)
+        code = c }
+    fn getCode() -> int { return code }
+}
+fn main() {
+    try { throw Boom("взрыв", 7) } catch e: Boom { print(e.message, e.getCode()) }
+})GL", {"взрыв 7"});
+
+    // Ошибки: снаружи, из потомка, из свободной функции.
+    const std::string account = R"GL(
+mold Account {
+    private let balance: int
+    protected let owner: string
+    let title: string
+    Account(b: int) { balance = b
+        owner = "x"
+        title = "t" }
+    private fn secret() -> int { return balance }
+    protected fn hook() -> int { return 1 }
+}
+)GL";
+    expectError("access_private_field_read_from_main", account + "fn main() { let a = Account(1)\n print(a.balance) }",
+                "поле 'balance' объявлено private в mold'е 'Account': обращаться к нему можно только из самого 'Account'");
+    expectError("access_private_field_write_from_main", account + "fn main() { let a = Account(1)\n a.balance = 0 }",
+                "поле 'balance' объявлено private");
+    expectError("access_private_method_from_main", account + "fn main() { let a = Account(1)\n print(a.secret()) }",
+                "метод 'secret' объявлен private в mold'е 'Account': вызывать его можно только из самого 'Account'");
+    expectError("access_protected_field_from_main", account + "fn main() { let a = Account(1)\n print(a.owner) }",
+                "поле 'owner' объявлено protected в mold'е 'Account': доступ только из 'Account' и его потомков");
+    expectError("access_protected_method_from_main", account + "fn main() { let a = Account(1)\n print(a.hook()) }",
+                "метод 'hook' объявлен protected в mold'е 'Account': доступ только из 'Account' и его потомков");
+    expectError("access_private_field_from_descendant", account +
+                "mold Savings : Account {\n    Savings() { super(1) }\n    fn peek() -> int { return balance }\n}\nfn main() { }",
+                "поле 'balance' объявлено private в mold'е 'Account'");
+    expectError("access_super_private_method_from_descendant", account +
+                "mold Savings : Account {\n    Savings() { super(1) }\n    fn peek() -> int { return super.secret() }\n}\nfn main() { }",
+                "метод 'secret' объявлен private в mold'е 'Account'");
+    expectError("access_private_field_from_free_function", account + "fn peek(a: Account) -> int { return a.balance }\nfn main() { }",
+                "поле 'balance' объявлено private");
+
+    // Конструктор: private — «закрытый» mold, protected — только для наследников.
+    expectError("access_private_constructor_from_main", R"GL(
+mold Single {
+    private Single() { }
+}
+fn main() { let s = Single() })GL", "конструктор mold'а 'Single' объявлен private");
+    expectError("access_protected_constructor_from_main", R"GL(
+mold Base {
+    protected Base() { }
+}
+fn main() { let b = Base() })GL", "конструктор mold'а 'Base' объявлен protected");
+    expectOutput("access_protected_constructor_super_is_fine", R"GL(
+mold Base {
+    protected Base() { print("база") }
+}
+mold Leaf : Base {
+    Leaf() { super() }
+}
+fn main() { Leaf() })GL", {"база"});
+}
+
+// ---------------------------------------------------------------------
+// Вызов метода того же объекта без this.
+// ---------------------------------------------------------------------
+
+void test_method_call_without_this() {
+    expectOutput("nothis_basic_and_recursion", R"GL(
+mold Calc {
+    fn fib(n: int) -> int {
+        if n < 2 { return n }
+        return fib(n - 1) + fib(n - 2)
+    }
+    fn tenth() -> int { return fib(10) }
+}
+fn main() { print(Calc().tenth()) })GL", {"55"});
+
+    expectOutput("nothis_in_constructor", R"GL(
+mold A {
+    let x: int
+    A() { x = twice(21) }
+    fn twice(n: int) -> int { return n * 2 }
+}
+fn main() { print(A().x) })GL", {"42"});
+
+    // Виртуальный метод, вызванный без this., по-прежнему выбирается по реальному классу объекта.
+    expectOutput("nothis_virtual_dispatch", R"GL(
+mold Animal {
+    virtual fn sound() -> string { return "..." }
+    fn describe() -> string { return "говорит " + sound() }
+}
+mold Dog : Animal {
+    override fn sound() -> string { return "Гав" }
+}
+fn main() {
+    let a: Animal = Dog()
+    print(a.describe(), Animal().describe())
+})GL", {"говорит Гав говорит ..."});
+
+    // Метод предка, private-помощник собственного mold'а.
+    expectOutput("nothis_inherited_and_private_helper", R"GL(
+mold Account {
+    private let balance: int
+    Account(b: int) { balance = b }
+    private fn isValid(amount: int) -> bool { return amount > 0 }
+    fn deposit(amount: int) {
+        if isValid(amount) { balance += amount }
+    }
+    fn current() -> int { return balance }
+}
+mold Savings : Account {
+    Savings() { super(10) }
+    fn bonus() { deposit(5)
+        deposit(-100) }
+}
+fn main() {
+    let s = Savings()
+    s.bonus()
+    print(s.current())
+})GL", {"15"});
+
+    // Встроенные функции и глобальные функции имеют приоритет: метод len() вызывает встроенную len(items),
+    // а g() внутри mold'а — глобальную функцию; метод с тем же именем зовётся только как this.g().
+    expectOutput("nothis_builtin_and_function_priority", R"GL(
+fn g() -> int { return 1 }
+mold Stack {
+    let items: [int]
+    Stack() { items = [3, 1, 2] }
+    fn len() -> int { return len(items) }
+    fn g() -> int { return 2 }
+    fn viaFunction() -> int { return g() }
+    fn viaThis() -> int { return this.g() }
+}
+fn main() {
+    let s = Stack()
+    print(s.len(), s.viaFunction(), s.viaThis())
+})GL", {"3 1 2"});
+
+    // Ошибки: приватный метод предка, арность, static и локальная переменная ведут себя как раньше.
+    expectError("nothis_private_base_method", R"GL(
+mold Base { private fn secret() -> int { return 1 } }
+mold Leaf : Base { fn f() -> int { return secret() } }
+fn main() { })GL", "метод 'secret' объявлен private в mold'е 'Base'");
+    expectError("nothis_arity_checked", R"GL(
+mold A {
+    fn two(a: int, b: int) -> int { return a + b }
+    fn f() -> int { return two(1) }
+}
+fn main() { })GL", "неверное число аргументов: ожидалось 2, передано 1");
+    expectError("nothis_static_not_callable", R"GL(
+mold A {
+    static fn util() -> int { return 5 }
+    fn f() -> int { return util() }
+}
+fn main() { })GL", "неизвестная функция или mold 'util'");
+    expectError("nothis_free_function_has_no_methods", R"GL(
+mold A { fn g() -> int { return 1 } }
+fn f() -> int { return g() }
+fn main() { })GL", "неизвестная функция или mold 'g'");
+}
+
 }  // namespace
 
 int main() {
@@ -856,6 +1323,9 @@ int main() {
     test_print_objects_and_tostring();
     test_reference_casts();
     test_dispatch_rules();
+    test_all_paths_return();
+    test_access_modifiers();
+    test_method_call_without_this();
 
     testkit::reportSummary();
     return testkit::g_testsFailed == 0 ? 0 : 1;

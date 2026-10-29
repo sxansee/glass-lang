@@ -92,6 +92,10 @@ private:
     TypeNode checkExpr(Expr& e);
     TypeNode checkExprAgainstExpected(Expr& e, const TypeNode& expected);
     void checkStmt(Stmt& s);
+    // Функция или метод с '-> тип' обязаны вернуть значение на каждом пути выполнения: иначе на
+    // «пропущенной» ветке вернулся бы null. what — «функции 'f'» / «метода 'm' mold'а 'M'» для сообщения.
+    void checkAllPathsReturn(const std::string& what, const std::optional<TypeNode>& returnType, const BlockStmt& body,
+                             int line, int col);
 
     bool isAssignable(const TypeNode& from, const TypeNode& to) const;
     bool isGenericParam(const std::string& name) const;
@@ -99,9 +103,24 @@ private:
     bool moldImplementsFacet(const std::string& moldName, const std::string& facetName) const;
     bool facetExtendsOrIs(const std::string& facetName, const std::string& target) const;
 
-    const MethodDecl* findMethod(const std::string& startMold, const std::string& methodName) const;
-    const FieldDecl* findField(const std::string& startMold, const std::string& fieldName) const;
+    // Ближайшее объявление по цепочке mold'ов startMold → его базы. owner получает имя mold'а, в котором
+    // член объявлен (нужно для проверки доступа).
+    const MethodDecl* findMethod(const std::string& startMold, const std::string& methodName,
+                                 std::string* owner = nullptr) const;
+    const FieldDecl* findField(const std::string& startMold, const std::string& fieldName,
+                               std::string* owner = nullptr) const;
     const FacetMethodSig* findFacetMethodSig(const std::string& facetName, const std::string& methodName) const;
+
+    // Модификаторы доступа (как в C#): private — только код самого mold'а-владельца (в том числе через
+    // другой его экземпляр); protected — владелец и его потомки; public и отсутствие модификатора — везде.
+    // Свободная функция видит только открытое. Проверка идёт по СТАТИЧЕСКОМУ типу; у protected не
+    // проверяется тип получателя (в C# через ссылку на базовый тип protected-член недоступен — здесь доступен).
+    enum class MemberKind { Field, Method, Constructor };
+    bool isMemberAccessible(AccessModifier access, const std::string& owner) const;
+    // Сообщает об ошибке, если к члену нельзя обратиться из текущего места; true — доступ разрешён.
+    // Для конструктора owner — имя mold'а, member не используется.
+    bool checkMemberAccess(AccessModifier access, const std::string& owner, const std::string& member, MemberKind kind,
+                           int line, int col);
 
     void checkArgsAgainstParams(const std::vector<Param>& params, CallExpr& call);
     TypeNode checkFunctionCall(const FunctionDecl& fn, CallExpr& call);

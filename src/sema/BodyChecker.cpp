@@ -28,6 +28,67 @@ std::string argWord(size_t n) {
     return std::to_string(n) + " " + word;
 }
 
+// ---------------------------------------------------------------------
+// «Все пути возвращают значение»
+//
+// Тот же анализ, что «can complete normally» в Java и C#, только с другого конца: alwaysExits(s) —
+// после оператора s выполнение НИКОГДА не идёт дальше. Оно либо вернулось (return), либо бросило
+// исключение (throw), либо осталось в бесконечном цикле. Условия не вычисляются; единственное
+// исключение — литерал true в while.
+// ---------------------------------------------------------------------
+
+// Есть ли в операторе break, который выходит из ЭТОГО цикла. Ищем через блоки, if и try; во вложенные
+// while/for не заходим: их break выходит из них самих.
+bool containsBreak(const Stmt& s) {
+    if (dynamic_cast<const BreakStmt*>(&s)) return true;
+    if (auto* block = dynamic_cast<const BlockStmt*>(&s)) {
+        for (auto& st : block->statements) {
+            if (containsBreak(*st)) return true;
+        }
+        return false;
+    }
+    if (auto* ifs = dynamic_cast<const IfStmt*>(&s)) {
+        return (ifs->thenBranch && containsBreak(*ifs->thenBranch)) || (ifs->elseBranch && containsBreak(*ifs->elseBranch));
+    }
+    if (auto* tr = dynamic_cast<const TryStmt*>(&s)) {
+        if (tr->tryBlock && containsBreak(*tr->tryBlock)) return true;
+        for (auto& c : tr->catches) {
+            if (c.body && containsBreak(*c.body)) return true;
+        }
+        return tr->finallyBlock && containsBreak(*tr->finallyBlock);
+    }
+    return false;  // while/for — свой break; у остальных операторов вложенных операторов нет
+}
+
+bool alwaysExits(const Stmt& s) {
+    if (dynamic_cast<const ReturnStmt*>(&s) || dynamic_cast<const ThrowStmt*>(&s)) return true;
+    if (auto* block = dynamic_cast<const BlockStmt*>(&s)) {
+        // Достаточно одного оператора, после которого дальше хода нет: всё, что ниже, недостижимо.
+        for (auto& st : block->statements) {
+            if (alwaysExits(*st)) return true;
+        }
+        return false;
+    }
+    if (auto* ifs = dynamic_cast<const IfStmt*>(&s)) {
+        // Без else условие может не выполниться; else if — это вложенный IfStmt в elseBranch.
+        return ifs->thenBranch && ifs->elseBranch && alwaysExits(*ifs->thenBranch) && alwaysExits(*ifs->elseBranch);
+    }
+    if (auto* wh = dynamic_cast<const WhileStmt*>(&s)) {
+        auto* lit = dynamic_cast<const BoolLiteralExpr*>(wh->condition.get());
+        return lit && lit->value && wh->body && !containsBreak(*wh->body);
+    }
+    if (auto* tr = dynamic_cast<const TryStmt*>(&s)) {
+        if (tr->finallyBlock && alwaysExits(*tr->finallyBlock)) return true;
+        if (!tr->tryBlock || !alwaysExits(*tr->tryBlock)) return false;
+        for (auto& c : tr->catches) {
+            if (!c.body || !alwaysExits(*c.body)) return false;
+        }
+        return true;
+    }
+    // for — может не выполниться ни разу; let, выражения, break, continue и пустой оператор идут дальше.
+    return false;
+}
+
 }  // namespace
 
 BodyChecker::BodyChecker(const Sema& sema) : sema_(sema) {}
@@ -232,30 +293,84 @@ bool BodyChecker::isAssignable(const TypeNode& from, const TypeNode& to) const {
     return false;
 }
 
-const MethodDecl* BodyChecker::findMethod(const std::string& startMold, const std::string& methodName) const {
+const MethodDecl* BodyChecker::findMethod(const std::string& startMold, const std::string& methodName,
+                                          std::string* owner) const {
     for (auto& moldName : sema_.getMoldChain(startMold)) {
         const MoldDecl* decl = sema_.getMold(moldName);
         if (!decl) continue;
         for (auto& member : decl->members) {
             if (auto* m = std::get_if<MethodDecl>(&member)) {
-                if (m->name == methodName) return m;
+                if (m->name == methodName) {
+                    if (owner) *owner = moldName;
+                    return m;
+                }
             }
         }
     }
     return nullptr;
 }
 
-const FieldDecl* BodyChecker::findField(const std::string& startMold, const std::string& fieldName) const {
+const FieldDecl* BodyChecker::findField(const std::string& startMold, const std::string& fieldName,
+                                        std::string* owner) const {
     for (auto& moldName : sema_.getMoldChain(startMold)) {
         const MoldDecl* decl = sema_.getMold(moldName);
         if (!decl) continue;
         for (auto& member : decl->members) {
             if (auto* f = std::get_if<FieldDecl>(&member)) {
-                if (f->name == fieldName) return f;
+                if (f->name == fieldName) {
+                    if (owner) *owner = moldName;
+                    return f;
+                }
             }
         }
     }
     return nullptr;
+}
+
+// ---------------------------------------------------------------------
+// Модификаторы доступа
+// ---------------------------------------------------------------------
+
+bool BodyChecker::isMemberAccessible(AccessModifier access, const std::string& owner) const {
+    switch (access) {
+        case AccessModifier::Private:
+            // currentMoldName_ пуст вне mold'а (свободная функция, инициализатор поля) — owner никогда не пуст.
+            return currentMoldName_ == owner;
+        case AccessModifier::Protected:
+            // Цепочка текущего mold'а — он сам и его предки: owner среди них, значит текущий mold — потомок владельца.
+            for (auto& moldName : sema_.getMoldChain(currentMoldName_)) {
+                if (moldName == owner) return true;
+            }
+            return false;
+        case AccessModifier::None:
+        case AccessModifier::Public:
+            return true;
+    }
+    return true;
+}
+
+bool BodyChecker::checkMemberAccess(AccessModifier access, const std::string& owner, const std::string& member,
+                                    MemberKind kind, int line, int col) {
+    if (isMemberAccessible(access, owner)) return true;
+    const bool isPrivate = access == AccessModifier::Private;
+    const std::string modifier = isPrivate ? "private" : "protected";
+    const std::string only = isPrivate ? "только из самого '" + owner + "'" : "только из '" + owner + "' и его потомков";
+    std::string message;
+    switch (kind) {
+        case MemberKind::Field:
+            message = "поле '" + member + "' объявлено " + modifier + " в mold'е '" + owner + "': " +
+                      (isPrivate ? "обращаться к нему можно " + only : "доступ " + only);
+            break;
+        case MemberKind::Method:
+            message = "метод '" + member + "' объявлен " + modifier + " в mold'е '" + owner + "': " +
+                      (isPrivate ? "вызывать его можно " + only : "доступ " + only);
+            break;
+        case MemberKind::Constructor:
+            message = "конструктор mold'а '" + owner + "' объявлен " + modifier + ": создавать объекты можно " + only;
+            break;
+    }
+    error(line, col, message);
+    return false;
 }
 
 const FacetMethodSig* BodyChecker::findFacetMethodSig(const std::string& facetName,
@@ -299,6 +414,7 @@ TypeNode BodyChecker::checkConstruction(const MoldDecl& mold, CallExpr& call) {
         if (auto* c = std::get_if<ConstructorDecl>(&m)) ctor = c;
     }
     if (ctor) {
+        checkMemberAccess(ctor->access, mold.name, mold.name, MemberKind::Constructor, call.line, call.column);
         checkArgsAgainstParams(ctor->params, call);
     } else if (!call.args.empty()) {
         error(call.line, call.column,
@@ -310,12 +426,14 @@ TypeNode BodyChecker::checkConstruction(const MoldDecl& mold, CallExpr& call) {
 
 TypeNode BodyChecker::checkMethodCallOnMold(const std::string& moldName, const std::string& methodName,
                                              CallExpr& call) {
-    const MethodDecl* m = findMethod(moldName, methodName);
+    std::string owner;
+    const MethodDecl* m = findMethod(moldName, methodName, &owner);
     if (!m) {
         error(call.line, call.column, "у mold '" + moldName + "' нет метода '" + methodName + "'");
         for (auto& a : call.args) checkExpr(*a);
         return errorType();
     }
+    checkMemberAccess(m->access, owner, methodName, MemberKind::Method, call.line, call.column);
     checkArgsAgainstParams(m->params, call);
     return m->returnType ? *m->returnType : voidType();
 }
@@ -601,6 +719,7 @@ void BodyChecker::visit(SuperExpr& e) {
             }
         }
         if (baseCtor) {
+            checkMemberAccess(baseCtor->access, baseName, baseName, MemberKind::Constructor, e.line, e.column);
             if (e.args.size() != baseCtor->params.size()) {
                 error(e.line, e.column,
                       "super(...) — неверное число аргументов: ожидалось " +
@@ -619,13 +738,15 @@ void BodyChecker::visit(SuperExpr& e) {
         }
         lastType_ = voidType();
     } else {
-        const MethodDecl* m = findMethod(baseName, e.methodName);
+        std::string owner;
+        const MethodDecl* m = findMethod(baseName, e.methodName, &owner);
         if (!m) {
             error(e.line, e.column, "у базового mold'а '" + baseName + "' нет метода '" + e.methodName + "'");
             for (auto& a : e.args) checkExpr(*a);
             lastType_ = errorType();
             return;
         }
+        checkMemberAccess(m->access, owner, e.methodName, MemberKind::Method, e.line, e.column);
         if (e.args.size() != m->params.size()) {
             error(e.line, e.column,
                   "неверное число аргументов: ожидалось " + std::to_string(m->params.size()) + ", передано " +
@@ -646,7 +767,10 @@ void BodyChecker::visit(IdentifierExpr& e) {
         return;
     }
     if (!currentMoldName_.empty()) {
-        if (const FieldDecl* f = findField(currentMoldName_, e.name)) {
+        std::string owner;
+        if (const FieldDecl* f = findField(currentMoldName_, e.name, &owner)) {
+            // private-поле предка по простому имени из потомка тоже недоступно.
+            checkMemberAccess(f->access, owner, e.name, MemberKind::Field, e.line, e.column);
             lastType_ = f->type;
             return;
         }
@@ -860,7 +984,14 @@ void BodyChecker::visit(CallExpr& e) {
         }
 
         bool isLocal = lookupVar(name).has_value();
-        bool isFieldName = !currentMoldName_.empty() && findField(currentMoldName_, name) != nullptr;
+        // Имя закрывает только ДОСТУПНОЕ поле: private-поле предка из потомка не видно и функцию не перекрывает.
+        bool isFieldName = false;
+        if (!currentMoldName_.empty()) {
+            std::string fieldOwner;
+            if (const FieldDecl* f = findField(currentMoldName_, name, &fieldOwner)) {
+                isFieldName = isMemberAccessible(f->access, fieldOwner);
+            }
+        }
         if (isLocal || isFieldName) {
             std::string hint = findBuiltinFunction(name) ? "; имя закрыто вашей переменной — переименуйте её, чтобы вызвать встроенную функцию" : "";
             error(e.line, e.column,
@@ -880,6 +1011,27 @@ void BodyChecker::visit(CallExpr& e) {
         if (const BuiltinDef* def = findBuiltinFunction(name)) {
             lastType_ = checkBuiltinFunction(e, *def);   // свои функции и mold'ы перекрывают встроенные
             return;
+        }
+        // Метод текущего mold'а (или его предка), вызванный без this.: подменяем вызов на this.имя(...) — дальше он
+        // проверяется и компилируется как обычный вызов метода (в том числе виртуальный). Только для имён, которые
+        // не нашлись выше: локальная переменная, поле, функция, mold и встроенная функция метод НЕ перекрывает —
+        // иначе mold Stack с методом len() не смог бы вызвать встроенную len(items). Нужен именно метод — this.len().
+        // static-методы не трогаем: у них нет this, а их вызов пока не поддерживается (TODO.md).
+        if (!currentMoldName_.empty()) {
+            const MethodDecl* method = findMethod(currentMoldName_, name);
+            if (method && method->modifier != MethodModifier::Static) {
+                auto self = std::make_unique<ThisExpr>();
+                self->line = idExpr->line;
+                self->column = idExpr->column;
+                auto call = std::make_unique<FieldAccessExpr>();
+                call->line = idExpr->line;
+                call->column = idExpr->column;
+                call->target = std::move(self);
+                call->name = name;          // копия: name ссылается на idExpr, который исчезнет со следующей строкой
+                e.callee = std::move(call);
+                visit(e);                   // теперь callee — FieldAccessExpr: идём обычным путём this.метод(...)
+                return;
+            }
         }
         error(e.line, e.column, "неизвестная функция или mold '" + name + "'");
         for (auto& a : e.args) checkExpr(*a);
@@ -932,7 +1084,9 @@ void BodyChecker::visit(FieldAccessExpr& e) {
         return;
     }
     if (targetType.kind == TypeNode::Kind::Named && sema_.isKnownMold(targetType.name)) {
-        if (const FieldDecl* f = findField(targetType.name, e.name)) {
+        std::string owner;
+        if (const FieldDecl* f = findField(targetType.name, e.name, &owner)) {
+            checkMemberAccess(f->access, owner, e.name, MemberKind::Field, e.line, e.column);
             lastType_ = f->type;
             return;
         }
@@ -1124,6 +1278,15 @@ void BodyChecker::visit(ExprStmt& s) { checkExpr(*s.expr); }
 
 void BodyChecker::visit(EmptyStmt&) {}
 
+void BodyChecker::checkAllPathsReturn(const std::string& what, const std::optional<TypeNode>& returnType,
+                                      const BlockStmt& body, int line, int col) {
+    if (!returnType || isVoidT(*returnType)) return;  // ничего не возвращает — нечего требовать
+    if (alwaysExits(body)) return;
+    error(line, col,
+          "не все ветки " + what + " возвращают значение типа " + typeToString(*returnType) +
+              ": после последнего оператора выполнение может дойти до конца без return");
+}
+
 // ---------------------------------------------------------------------
 // Точка входа: обход всех деклараций
 // ---------------------------------------------------------------------
@@ -1154,6 +1317,8 @@ std::vector<std::string> BodyChecker::checkProgram(Program& program) {
                     for (auto& p : method->params) defineVar(p.name, p.type, p.line, p.column);
                     checkStmt(*method->body);
                     popScope();
+                    checkAllPathsReturn("метода '" + method->name + "' mold'а '" + mold->name + "'", method->returnType,
+                                        *method->body, method->line, method->column);
                 } else if (auto* ctor = std::get_if<ConstructorDecl>(&member)) {
                     currentMoldName_ = mold->name;
                     currentGenericScope_ = mold->genericParams;
@@ -1175,6 +1340,7 @@ std::vector<std::string> BodyChecker::checkProgram(Program& program) {
             for (auto& p : fn->params) defineVar(p.name, p.type, p.line, p.column);
             checkStmt(*fn->body);
             popScope();
+            checkAllPathsReturn("функции '" + fn->name + "'", fn->returnType, *fn->body, fn->line, fn->column);
         }
     }
 

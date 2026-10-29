@@ -58,6 +58,13 @@ GLASS_UPDATE_DOCS=1 dotnet run -c Release -- документация
 
 (в PowerShell: `$env:GLASS_UPDATE_DOCS = "1"` перед командой) и проверьте изменения глазами.
 
+Эта команда переписывает вывод примеров `glass run` и справочник. Блоки `output` у примеров `glass error` она не трогает: в них записан полный вывод `glassc` (заголовок со счётчиком и все сообщения). Их обновляет скрипт — он запускает собранный `glassc` на каждом таком примере:
+
+```
+python3 scripts/update-docs.py            # переписать устаревшие блоки
+python3 scripts/update-docs.py --check    # только проверить, код выхода 1 при расхождении
+```
+
 ## Непрерывная проверка и релизы
 
 На GitHub при каждом пуше работает CI (`.github/workflows/ci.yml`): Linux с gcc и Windows с MSVC, включая сборку WPF-оболочки. Как выпустить релиз — в [`RELEASING.md`](../RELEASING.md), правила для участников — в [`CONTRIBUTING.md`](../CONTRIBUTING.md).
