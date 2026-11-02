@@ -53,6 +53,9 @@ namespace Glass.Studio.ViewModels
         private LocalItem? _selectedLocal;
         private IReadOnlyList<FrameLocals> _frames = Array.Empty<FrameLocals>();
         private IReadOnlyList<StaticVariable> _statics = Array.Empty<StaticVariable>();
+        private readonly ISettingsStore? _settingsStore;
+        private readonly UserSettings _settings;
+        private IReadOnlyList<RecentFileItem> _recentFiles = Array.Empty<RecentFileItem>();
         private HeapSnapshot _heap = HeapSnapshot.Empty;
         private HeapSnapshot? _previousHeap;
         private bool _hasHeap;
@@ -66,12 +69,20 @@ namespace Glass.Studio.ViewModels
         private string _gcMessage = "";
 
         /// <param name="liveCheckDelayMs">Пауза после ввода перед фоновой проверкой кода; отрицательное — проверка отключена (тесты).</param>
-        public MainViewModel(IEditorHost editor, IFileDialogs dialogs, int liveCheckDelayMs = 600, ILog? log = null)
+        /// <param name="settings">Где хранятся недавние файлы и размер шрифта; null — настройки живут только в памяти (тесты).</param>
+        public MainViewModel(IEditorHost editor, IFileDialogs dialogs, int liveCheckDelayMs = 600, ILog? log = null,
+                             ISettingsStore? settings = null)
         {
             _log = log ?? NullLog.Instance;
             _editor = editor ?? throw new ArgumentNullException(nameof(editor));
             _dialogs = dialogs ?? throw new ArgumentNullException(nameof(dialogs));
             _liveCheckDelayMs = liveCheckDelayMs;
+            _settingsStore = settings;
+            _settings = (settings?.Load() ?? new UserSettings()).Normalize();
+            RebuildRecentFiles();
+            EditorFontLargerCommand = new RelayCommand(() => EditorFontSize += 1);
+            EditorFontSmallerCommand = new RelayCommand(() => EditorFontSize -= 1);
+            EditorFontResetCommand = new RelayCommand(() => EditorFontSize = UserSettings.DefaultEditorFontSize);
 
             Inspector = new ObjectInspectorViewModel();
             Examples = ExampleCatalog.All;
@@ -232,6 +243,38 @@ namespace Glass.Studio.ViewModels
 
         /// <summary>Те же примеры, но как пункты меню с готовыми командами.</summary>
         public IReadOnlyList<ExampleMenuItem> ExampleMenu { get; }
+
+        /// <summary>Недавние файлы для меню «Файл», самый свежий первым.</summary>
+        public IReadOnlyList<RecentFileItem> RecentFiles
+        {
+            get => _recentFiles;
+            private set
+            {
+                _recentFiles = value;
+                OnPropertyChanged(nameof(RecentFiles));
+                OnPropertyChanged(nameof(HasRecentFiles));
+            }
+        }
+
+        public bool HasRecentFiles => _recentFiles.Count > 0;
+
+        /// <summary>Размер шрифта редактора (пт). Меняется колесом с Ctrl и пунктами меню «Вид»; запоминается между запусками.</summary>
+        public double EditorFontSize
+        {
+            get => _settings.EditorFontSize;
+            set
+            {
+                double size = UserSettings.ClampFontSize(value);
+                if (Math.Abs(size - _settings.EditorFontSize) < 0.001) return;
+                _settings.EditorFontSize = size;
+                OnPropertyChanged(nameof(EditorFontSize));
+                SaveSettings();
+            }
+        }
+
+        public ICommand EditorFontLargerCommand { get; }
+        public ICommand EditorFontSmallerCommand { get; }
+        public ICommand EditorFontResetCommand { get; }
         public bool IsModified { get => _isModified; private set { if (SetProperty(ref _isModified, value)) OnPropertyChanged(nameof(WindowTitle)); } }
 
         public string? CurrentFilePath
@@ -641,15 +684,56 @@ namespace Glass.Studio.ViewModels
             if (IsModified && !_dialogs.ConfirmDiscardChanges()) return;
             string? path = _dialogs.ChooseFileToOpen();
             if (path == null) return;
+            OpenPath(path, alreadyConfirmed: true);
+        }
+
+        /// <summary>
+        /// Открыть файл по пути — из меню «Недавние файлы» или перетаскиванием на окно. Несохранённые изменения спрашивает
+        /// так же, как обычное «Открыть». false — файл не открыт (отказались, идёт выполнение, файла нет).
+        /// </summary>
+        public bool OpenPath(string path, bool alreadyConfirmed = false)
+        {
+            if (State == IdeState.Running) return false;
+            if (!alreadyConfirmed && IsModified && !_dialogs.ConfirmDiscardChanges()) return false;
             string text;
             try { text = File.ReadAllText(path); }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 StatusText = "Не удалось открыть файл: " + ex.Message;
-                return;
+                if (ex is FileNotFoundException || ex is DirectoryNotFoundException) ForgetRecent(path);   // файл переехал или удалён
+                return false;
             }
             LoadText(text, path, null, alreadyConfirmed: true);
+            RememberRecent(path);
+            return true;
         }
+
+        // ------------------------------------------------------------------
+        // Настройки и недавние файлы
+        // ------------------------------------------------------------------
+
+        private void RememberRecent(string path)
+        {
+            string full = Path.GetFullPath(path);
+            _settings.RecentFiles.RemoveAll(p => string.Equals(p, full, StringComparison.OrdinalIgnoreCase));
+            _settings.RecentFiles.Insert(0, full);
+            _settings.Normalize();
+            RebuildRecentFiles();
+            SaveSettings();
+        }
+
+        private void ForgetRecent(string path)
+        {
+            string full = Path.GetFullPath(path);
+            if (_settings.RecentFiles.RemoveAll(p => string.Equals(p, full, StringComparison.OrdinalIgnoreCase)) == 0) return;
+            RebuildRecentFiles();
+            SaveSettings();
+        }
+
+        private void RebuildRecentFiles() =>
+            RecentFiles = _settings.RecentFiles.Select(p => new RecentFileItem(p, path => OpenPath(path), () => State != IdeState.Running)).ToList();
+
+        private void SaveSettings() => _settingsStore?.Save(_settings);
 
         private void LoadText(string text, string? path, string? exampleTitle, bool alreadyConfirmed = false)
         {
@@ -704,6 +788,7 @@ namespace Glass.Studio.ViewModels
             CurrentFilePath = path;
             _exampleTitle = null;
             IsModified = false;
+            RememberRecent(path);
             _log.Info("Файл", "Сохранено: " + path);
             StatusText = "Сохранено: " + Path.GetFileName(path);
             return true;
@@ -818,6 +903,7 @@ namespace Glass.Studio.ViewModels
                 else if (command is AsyncRelayCommand asyncRelay) asyncRelay.RaiseCanExecuteChanged();
             }
             foreach (ExampleMenuItem item in ExampleMenu) item.OpenCommand.RaiseCanExecuteChanged();
+            foreach (RecentFileItem item in _recentFiles) item.OpenCommand.RaiseCanExecuteChanged();
         }
 
         public void Dispose()

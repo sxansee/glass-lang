@@ -16,6 +16,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>12.0</LangVersion>
+    <!-- Манифест: уровень запуска, совместимость с Windows 10/11 и Per-Monitor V2 DPI (см. комментарии внутри). -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

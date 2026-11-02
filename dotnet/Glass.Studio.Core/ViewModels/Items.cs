@@ -27,6 +27,24 @@ namespace Glass.Studio.ViewModels
         public ICommand Command => OpenCommand;
     }
 
+    /// <summary>Пункт меню «Файл → Недавние файлы».</summary>
+    public sealed class RecentFileItem
+    {
+        public RecentFileItem(string path, Action<string> open, Func<bool> canOpen)
+        {
+            Path = path;
+            OpenCommand = new RelayCommand(() => open(path), canOpen);
+        }
+
+        public string Path { get; }
+
+        /// <summary>Имя файла — то, что видно в меню; полный путь — во всплывающей подсказке.</summary>
+        public string Title => System.IO.Path.GetFileName(Path);
+
+        public RelayCommand OpenCommand { get; }
+        public ICommand Command => OpenCommand;
+    }
+
     public sealed class StackFrameItem
     {
         public StackFrameItem(int depth, string function, int line)

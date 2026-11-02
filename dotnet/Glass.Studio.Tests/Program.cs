@@ -23,6 +23,7 @@ namespace Glass.Studio.Tests
             HeapGraphTests.Register();
             SessionTests.Register();
             ViewModelTests.Register();
+            SettingsTests.Register();
             XamlLintTests.Register();
             LoggingTests.Register();
             CourseTests.Register();

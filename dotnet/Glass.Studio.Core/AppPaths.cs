@@ -27,5 +27,8 @@ namespace Glass.Studio
 
         /// <summary>Прогресс курса: пройденные уроки, звёзды, последний открытый урок.</summary>
         public static string CourseProgressFile => Path.Combine(DataDirectory, "course-progress.json");
+
+        /// <summary>Настройки пользователя: недавние файлы, размер шрифта редактора.</summary>
+        public static string SettingsFile => Path.Combine(DataDirectory, "settings.json");
     }
 }

@@ -12,6 +12,9 @@
         Width="1480" Height="900" MinWidth="980" MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBackgroundBrush}"
+        AllowDrop="True"
+        PreviewDragOver="OnPreviewDragOver"
+        PreviewDrop="OnPreviewDrop"
         Closing="OnClosing">
 
     <Window.InputBindings>
@@ -55,6 +58,15 @@
                 <MenuItem Header="_Сохранить" Command="{Binding SaveCommand}" InputGestureText="Ctrl+S" />
                 <MenuItem Header="Сохранить _как…" Command="{Binding SaveAsCommand}" InputGestureText="Ctrl+Shift+S" />
                 <Separator />
+                <MenuItem Header="_Недавние файлы" ItemsSource="{Binding RecentFiles}" IsEnabled="{Binding HasRecentFiles}">
+                    <MenuItem.ItemContainerStyle>
+                        <Style TargetType="MenuItem">
+                            <Setter Property="Header" Value="{Binding Title}" />
+                            <Setter Property="ToolTip" Value="{Binding Path}" />
+                            <Setter Property="Command" Value="{Binding Command}" />
+                        </Style>
+                    </MenuItem.ItemContainerStyle>
+                </MenuItem>
                 <MenuItem Header="_Примеры" ItemsSource="{Binding ExampleMenu}">
                     <MenuItem.ItemContainerStyle>
                         <Style TargetType="MenuItem">
@@ -66,6 +78,17 @@
                 </MenuItem>
                 <Separator />
                 <MenuItem Header="В_ыход" InputGestureText="Alt+F4" Click="OnExit" />
+            </MenuItem>
+            <MenuItem Header="_Правка">
+                <MenuItem Header="_Отменить" Command="Undo" CommandTarget="{Binding ElementName=CodeEditor, Path=TextArea}" InputGestureText="Ctrl+Z" />
+                <MenuItem Header="_Повторить" Command="Redo" CommandTarget="{Binding ElementName=CodeEditor, Path=TextArea}" InputGestureText="Ctrl+Y" />
+                <Separator />
+                <MenuItem Header="_Вырезать" Command="Cut" CommandTarget="{Binding ElementName=CodeEditor, Path=TextArea}" InputGestureText="Ctrl+X" />
+                <MenuItem Header="_Копировать" Command="Copy" CommandTarget="{Binding ElementName=CodeEditor, Path=TextArea}" InputGestureText="Ctrl+C" />
+                <MenuItem Header="В_ставить" Command="Paste" CommandTarget="{Binding ElementName=CodeEditor, Path=TextArea}" InputGestureText="Ctrl+V" />
+                <MenuItem Header="Выделить _всё" Command="SelectAll" CommandTarget="{Binding ElementName=CodeEditor, Path=TextArea}" InputGestureText="Ctrl+A" />
+                <Separator />
+                <MenuItem Header="_Найти…" Command="Find" CommandTarget="{Binding ElementName=CodeEditor, Path=TextArea}" InputGestureText="Ctrl+F" />
             </MenuItem>
             <MenuItem Header="_Отладка">
                 <MenuItem Header="Начать отладку / _продолжить" Command="{Binding StartOrContinueCommand}" InputGestureText="F5" />
@@ -85,6 +108,10 @@
                 <MenuItem Header="Увеличить схему кучи" Command="{Binding ZoomInCommand}" InputGestureText="Ctrl++" />
                 <MenuItem Header="Уменьшить схему кучи" Command="{Binding ZoomOutCommand}" InputGestureText="Ctrl+-" />
                 <MenuItem Header="Масштаб 100%" Command="{Binding ResetZoomCommand}" InputGestureText="Ctrl+0" />
+                <Separator />
+                <MenuItem Header="Шрифт редактора: крупнее" Command="{Binding EditorFontLargerCommand}" InputGestureText="Ctrl+колесо вверх" />
+                <MenuItem Header="Шрифт редактора: мельче" Command="{Binding EditorFontSmallerCommand}" InputGestureText="Ctrl+колесо вниз" />
+                <MenuItem Header="Шрифт редактора: по умолчанию" Command="{Binding EditorFontResetCommand}" />
             </MenuItem>
             <MenuItem Header="_Курс по Glass" Click="OnOpenCourse" FontWeight="SemiBold"
                       Foreground="{StaticResource AccentBrush}"
@@ -282,8 +309,9 @@
                         <avalon:TextEditor x:Name="CodeEditor"
                                            PreviewMouseRightButtonUp="OnEditorRightClick"
                                            PreviewKeyDown="OnEditorPreviewKeyDown"
+                                           PreviewMouseWheel="OnEditorMouseWheel"
                                            FontFamily="Cascadia Mono, Consolas, Courier New"
-                                           FontSize="14"
+                                           FontSize="{Binding EditorFontSize, Mode=OneWay}"
                                            ShowLineNumbers="True"
                                            LineNumbersForeground="#8A94A6"
                                            WordWrap="False"
@@ -411,13 +439,15 @@
                                     <Button Command="{Binding CollectGarbageCommand}" Padding="10,1" ToolTip="Освободить недостижимые объекты прямо сейчас (как ~gc)">
                                         <TextBlock Text="Собрать мусор" />
                                     </Button>
-                                    <Button Command="{Binding ZoomOutCommand}" Width="26" Margin="10,0,0,0" ToolTip="Уменьшить (Ctrl+-)">
+                                    <Button Command="{Binding ZoomOutCommand}" Width="26" Margin="10,0,0,0" ToolTip="Уменьшить (Ctrl+-)"
+                                            AutomationProperties.Name="Уменьшить схему кучи">
                                         <TextBlock Text="−" />
                                     </Button>
                                     <Button Command="{Binding ResetZoomCommand}" MinWidth="50" Margin="2,0,0,0" ToolTip="Сбросить масштаб (Ctrl+0)">
                                         <TextBlock Text="{Binding Zoom, StringFormat={}{0:P0}}" />
                                     </Button>
-                                    <Button Command="{Binding ZoomInCommand}" Width="26" Margin="2,0,0,0" ToolTip="Увеличить (Ctrl++)">
+                                    <Button Command="{Binding ZoomInCommand}" Width="26" Margin="2,0,0,0" ToolTip="Увеличить (Ctrl++)"
+                                            AutomationProperties.Name="Увеличить схему кучи">
                                         <TextBlock Text="+" />
                                     </Button>
                                 </StackPanel>

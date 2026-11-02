@@ -28,7 +28,8 @@ namespace Glass.Studio
             InitializeComponent();
 
             _editorHost = new EditorHost(CodeEditor);
-            _viewModel = new MainViewModel(_editorHost, new FileDialogs(this), log: AppServices.Log);
+            _viewModel = new MainViewModel(_editorHost, new FileDialogs(this), log: AppServices.Log,
+                                           settings: new UserSettingsStore(AppPaths.SettingsFile, AppServices.Log));
 
             // Вкладка «Журнал»: записи приходят из любых потоков, а список живёт в потоке интерфейса — отсюда контекст синхронизации.
             var logPanel = new LogPanelViewModel(AppServices.Log, new DispatcherSynchronizationContext(Dispatcher))
@@ -104,6 +105,31 @@ namespace Glass.Studio
                 "Исходный код и документация: " + AppInfo.RepositoryUrl + "\n" +
                 "Журнал и прогресс курса: " + AppPaths.DataDirectory,
                 "О программе", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        // ------------------------------------------------------------------ размер шрифта и перетаскивание файла
+
+        // Ctrl + колесо над редактором — размер шрифта (показ на проекторе, чтение с экрана). Без Ctrl колесо прокручивает.
+        private void OnEditorMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (Keyboard.Modifiers != ModifierKeys.Control || e.Delta == 0) return;
+            _viewModel.EditorFontSize += e.Delta > 0 ? 1 : -1;
+            e.Handled = true;
+        }
+
+        // Файл, брошенный на окно, открывается как через «Файл → Открыть»: те же вопросы о несохранённых изменениях.
+        private void OnPreviewDragOver(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;   // перетаскивание текста внутри редактора — не наше
+            e.Effects = DragDropEffects.Copy;
+            e.Handled = true;
+        }
+
+        private void OnPreviewDrop(object sender, DragEventArgs e)
+        {
+            if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+            e.Handled = true;
+            if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0) _viewModel.OpenPath(files[0]);
         }
 
         // ------------------------------------------------------------------ карточка элемента кода

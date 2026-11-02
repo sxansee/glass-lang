@@ -23,6 +23,65 @@ namespace Glass.Studio.Tests
             Add("оболочка: курс доступен из главного окна (меню, кнопка, окно, обработчики)", CourseIsReachable);
             Add("оболочка: окно курса показывает все возможности view-model курса", CourseWindowCoversViewModel);
             Add("оболочка: вкладка «Журнал», пункты «Справки» и обработчики необработанных исключений подключены", LogAndHelpAreWired);
+            Add("оболочка: каждая команда главной ViewModel выведена в окно", MainWindowCoversViewModel);
+            Add("оболочка: удобство редактирования — «Правка», поиск, шрифт, недавние файлы, перетаскивание", EditingComfortIsWired);
+            Add("оболочка: манифест — Per-Monitor V2 DPI и обычные права", DpiAwareness);
+        }
+
+        private static void MainWindowCoversViewModel()
+        {
+            string xaml = Read("MainWindow.xaml");
+            string code = Read("MainWindow.xaml.cs");
+            Check(xaml.Length > 0 && code.Length > 0, "MainWindow.xaml и MainWindow.xaml.cs найдены");
+
+            // Возможность без кнопки — это возможность, которой нет: так уже было с курсом и журналом.
+            // Исключения — две команды, которые окно вызывает другим путём; он проверяется отдельно, ниже.
+            var viaOtherPath = new[] { nameof(MainViewModel.OpenExampleCommand), nameof(MainViewModel.SelectHeapNodeCommand) };
+            Check(xaml.Contains("ItemsSource=\"{Binding ExampleMenu}\""), "примеры открываются пунктами меню (ExampleMenuItem.OpenCommand)");
+            string heapView = File.ReadAllText(Path.Combine(WpfDir() ?? "", "Views", "HeapGraphView.xaml.cs"));
+            Check(heapView.Contains("ViewModel?.SelectHeapNode("), "узлы схемы кучи выбираются прямым вызовом SelectHeapNode из обработчиков");
+            foreach (PropertyInfo command in typeof(MainViewModel).GetProperties()
+                         .Where(p => typeof(ICommand).IsAssignableFrom(p.PropertyType) && !viaOtherPath.Contains(p.Name)))
+            {
+                bool shown = Regex.IsMatch(xaml, @"\{Binding\s+" + Regex.Escape(command.Name) + @"[\s,}]") || code.Contains(command.Name, StringComparison.Ordinal);
+                Check(shown, "MainWindow показывает команду " + command.Name);
+            }
+        }
+
+        private static void EditingComfortIsWired()
+        {
+            string xaml = Read("MainWindow.xaml");
+            string code = Read("MainWindow.xaml.cs");
+            string host = Read("Editor/EditorHost.cs");
+
+            // «Правка»: стандартные команды, адресованные именно текстовой области редактора (иначе они недоступны, пока
+            // фокус не в тексте), — и меню «Правка» существует.
+            Check(xaml.Contains("Header=\"_Правка\""), "в меню есть «Правка»");
+            foreach (string command in new[] { "Undo", "Redo", "Cut", "Copy", "Paste", "SelectAll", "Find" })
+            {
+                Check(Regex.IsMatch(xaml, "Command=\"" + command + "\"[^>]*CommandTarget=\"\\{Binding ElementName=CodeEditor, Path=TextArea\\}\""),
+                      "«Правка»: команда " + command + " адресована текстовой области редактора");
+            }
+            Check(host.Contains("SearchPanel.Install"), "панель поиска установлена в редактор (Ctrl+F)");
+            Check(File.Exists(Path.Combine(WpfDir() ?? "", "Editor", "RussianSearchLocalization.cs")), "подписи панели поиска переведены");
+
+            Check(Regex.IsMatch(xaml, "ItemsSource=\"\\{Binding RecentFiles\\}\""), "«Недавние файлы» привязаны к списку RecentFiles");
+            Check(Regex.IsMatch(xaml, "FontSize=\"\\{Binding EditorFontSize"), "размер шрифта редактора берётся из настроек, а не из разметки");
+            Check(xaml.Contains("PreviewMouseWheel=\"OnEditorMouseWheel\"") && code.Contains("Keyboard.Modifiers != ModifierKeys.Control"),
+                  "Ctrl+колесо над редактором меняет размер шрифта");
+            Check(xaml.Contains("AllowDrop=\"True\"") && xaml.Contains("PreviewDrop=\"OnPreviewDrop\"") && code.Contains("DataFormats.FileDrop") &&
+                  code.Contains("_viewModel.OpenPath("), "файл, брошенный на окно, открывается через OpenPath (с вопросом о потере изменений)");
+            Check(code.Contains("new UserSettingsStore(AppPaths.SettingsFile"), "настройки хранятся в файле каталога данных приложения");
+        }
+
+        private static void DpiAwareness()
+        {
+            string csproj = Read("Glass.Studio.csproj");
+            string manifest = Read("app.manifest");
+            Check(csproj.Contains("<ApplicationManifest>app.manifest</ApplicationManifest>"), "проект подключает app.manifest");
+            Check(manifest.Contains("PerMonitorV2"), "манифест объявляет Per-Monitor V2: окно не мутнеет при переносе на проектор с другим масштабом");
+            Check(manifest.Contains("asInvoker"), "запуск без повышения прав");
+            Check(System.Xml.Linq.XDocument.Parse(manifest).Root != null, "манифест — корректный XML");
         }
 
         private static string? WpfDir()

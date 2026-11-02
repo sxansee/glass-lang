@@ -7,6 +7,7 @@ using Glass.Studio.ViewModels;
 using ICSharpCode.AvalonEdit;
 using ICSharpCode.AvalonEdit.Document;
 using ICSharpCode.AvalonEdit.Rendering;
+using ICSharpCode.AvalonEdit.Search;
 
 namespace Glass.Studio.Editor
 {
@@ -32,6 +33,9 @@ namespace Glass.Studio.Editor
             _editor.TextArea.LeftMargins.Insert(0, _margin);   // левее номеров строк
             _margin.ToggleRequested += line => BreakpointToggleRequested?.Invoke(line);
             _editor.TextChanged += OnTextChanged;
+
+            // Ctrl+F — панель поиска (F3 / Shift+F3 — дальше / назад, Esc — закрыть); подписи по-русски.
+            SearchPanel.Install(_editor).Localization = new RussianSearchLocalization();
 
             // Табы заменяем пробелами и показываем отступ в 4 пробела — так выглядят примеры.
             _editor.Options.ConvertTabsToSpaces = true;
