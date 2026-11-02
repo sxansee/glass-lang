@@ -1287,16 +1287,286 @@ mold A {
     fn f() -> int { return two(1) }
 }
 fn main() { })GL", "неверное число аргументов: ожидалось 2, передано 1");
-    expectError("nothis_static_not_callable", R"GL(
-mold A {
-    static fn util() -> int { return 5 }
-    fn f() -> int { return util() }
-}
-fn main() { })GL", "неизвестная функция или mold 'util'");
     expectError("nothis_free_function_has_no_methods", R"GL(
 mold A { fn g() -> int { return 1 } }
 fn f() -> int { return g() }
 fn main() { })GL", "неизвестная функция или mold 'g'");
+}
+
+// ---------------------------------------------------------------------
+// Строки неизменяемы: присваивание элементу — ошибка компиляции, а не падение при выполнении
+// ---------------------------------------------------------------------
+
+void test_string_immutability() {
+    expectError("string_element_assignment_rejected", R"GL(
+fn main() {
+    let s = "привет"
+    s[0] = "П"
+    print(s)
+})GL", "строки неизменяемы: присвоить элементу строки нельзя");
+
+    // «Изменить» строку можно, собрав новую.
+    expectOutput("string_rebuilt_with_slices", R"GL(
+fn main() {
+    let s = "привет"
+    s = "П" + s[1:]
+    print(s)
+})GL", {"Привет"});
+
+    expectOutput("array_element_assignment_still_works", R"GL(
+fn main() {
+    let xs = [1, 2, 3]
+    xs[0] = 9
+    xs[2] += 10
+    print(xs)
+})GL", {"[9, 2, 13]"});
+}
+
+// ---------------------------------------------------------------------
+// hex() и единый вид адресов: print(obj), ~heap и hex(obj~address) показывают один и тот же Класс@0x…
+// ---------------------------------------------------------------------
+
+void test_hex_and_address_forms() {
+    expectMain("hex_basic", "print(hex(255), hex(0), hex(16), hex(-255))", {"0xff 0x0 0x10 -0xff"});
+    expectMain("hex_of_smallest_int", "print(hex(-9223372036854775807 - 1))", {"-0x8000000000000000"});
+    expectMain("hex_result_is_string", "let s: string = hex(10)\n    print(s + \"!\", len(s))", {"0xa! 3"});
+
+    // Три способа увидеть адрес согласованы между собой.
+    expectOutput("address_forms_agree", R"GL(
+mold Box {
+    let v: int
+    Box(x: int) { v = x }
+}
+fn main() {
+    let b = Box(1)
+    print(str(b) == "Box@" + hex(b~address))
+    print(str(~heap).contains("Box@" + hex(b~address)))
+    print(str(b).startsWith("Box@0x"))
+})GL", {"true", "true", "true"});
+
+    // Снимок кучи не печатает адреса десятичными числами.
+    expectOutput("heap_snapshot_uses_hex_addresses", R"GL(
+mold Box { let v: int }
+fn main() {
+    let a = Box()
+    let h = ~heap
+    print(h.objectCount, str(h).contains("@0x"), str(h).contains("@" + str(a~address)))
+})GL", {"1 true false"});
+
+    expectError("hex_rejects_double", "fn main() { print(hex(1.5)) }", "hex() ожидает целое число (int), получено 'double'");
+    expectError("hex_rejects_string", "fn main() { print(hex(\"a\")) }", "hex() ожидает целое число (int), получено 'string'");
+    expectError("hex_checks_arity", "fn main() { print(hex(1, 2)) }", "'hex' ожидает 1 аргумент, передано 2");
+}
+
+// ---------------------------------------------------------------------
+// static: поля и методы, общие для всего mold'а
+// ---------------------------------------------------------------------
+
+void test_static_members() {
+    // Счётчик объектов: static-поле одно на весь mold, static-метод вызывается и по имени mold'а, и по простому имени.
+    expectOutput("static_counter_and_methods", R"GL(
+mold Counter {
+    static let created: int = 0
+    static let label: string = "счётчик"
+    let id: int
+    Counter() {
+        created += 1
+        id = created
+    }
+    static fn total() -> int { return created }
+    static fn describe() -> string { return label + ": " + str(total()) }
+    fn myId() -> int { return id }
+}
+fn main() {
+    print(Counter.created, Counter.total())
+    let a = Counter()
+    let b = Counter()
+    print(a.myId(), b.myId(), Counter.created)
+    print(Counter.describe())
+    Counter.created = 100
+    let c = Counter()
+    print(c.myId(), Counter.total())
+    Counter.label += "!"
+    print(Counter.describe())
+})GL", {"0 0", "1 2 2", "счётчик: 2", "101 101", "счётчик!: 101"});
+
+    // Одиночка: static-инициализатор вызывает private-конструктор своего mold'а.
+    expectOutput("static_singleton_with_private_constructor", R"GL(
+mold Config {
+    static let instance: Config = Config()
+    let name: string
+    private Config() { name = "по умолчанию" }
+    static fn get() -> Config { return instance }
+}
+fn main() {
+    print(Config.get().name, Config.get() == Config.instance, Config.get() == Config.get())
+})GL", {"по умолчанию true true"});
+
+    // Утилитные static-методы: рекурсия и вызов из обычного метода по простому имени.
+    expectOutput("static_utility_methods_and_recursion", R"GL(
+mold MathUtil {
+    static fn fact(n: int) -> int {
+        if n <= 1 { return 1 }
+        return n * fact(n - 1)
+    }
+    static fn square(x: double) -> double { return x * x }
+}
+mold Circle {
+    let r: double
+    Circle(radius: double) { r = radius }
+    fn area() -> double { return MathUtil.square(r) * 3.0 }
+}
+fn main() {
+    print(MathUtil.fact(5), MathUtil.square(1.5), Circle(2.0).area())
+})GL", {"120 2.25 12.0"});
+
+    // static-константы и значения по умолчанию.
+    expectOutput("static_defaults_and_constants", R"GL(
+mold Limits {
+    static let maxItems: int = 3
+    static let ratio: double = 0.5
+    static let flag: bool
+    static let zero: int
+    static let reading: double
+    static let note: string
+}
+fn main() {
+    print(Limits.maxItems, Limits.ratio, Limits.flag, Limits.zero, Limits.reading, Limits.note)
+})GL", {"3 0.5 false 0 0.0 null"});
+
+    // Порядок инициализации: база раньше потомка (даже если потомок объявлен раньше), внутри mold'а —
+    // в порядке объявления; всё это — до main.
+    expectOutput("static_initialization_order", R"GL(
+fn trace(name: string) -> int {
+    print("init", name)
+    return 1
+}
+mold Derived : Base {
+    static let d: int = trace("Derived.d")
+}
+mold Base {
+    static let b1: int = trace("Base.b1")
+    static let b2: int = trace("Base.b2")
+}
+fn main() { print("main") })GL", {"init Base.b1", "init Base.b2", "init Derived.d", "main"});
+
+    // Инициализатор может опираться на уже инициализированные static-поля.
+    expectOutput("static_initializer_uses_earlier_statics", R"GL(
+mold A {
+    static let a: int = 5
+    static let b: int = a * 2
+    static let c: int = b + a
+}
+fn main() { print(A.a, A.b, A.c) })GL", {"5 10 15"});
+
+    // static-поле предка одно и то же для потомков: Base.n и Derived.n — одна переменная.
+    expectOutput("static_field_shared_with_descendants", R"GL(
+mold Base {
+    static let n: int = 0
+    static fn bump() { n += 1 }
+}
+mold Derived : Base {
+    fn touch() { bump()
+        n += 10 }
+}
+fn main() {
+    Base.bump()
+    Derived.bump()
+    Derived().touch()
+    print(Base.n, Derived.n)
+})GL", {"13 13"});   // bump() ×3 по разным именам (Base.bump, Derived.bump, bump() в touch) и +10 = 13
+
+    // Своё static-поле потомка с тем же именем — отдельная переменная.
+    expectOutput("static_field_of_descendant_is_separate", R"GL(
+mold Base { static let n: int = 1 }
+mold Derived : Base { static let n: int = 2 }
+fn main() { print(Base.n, Derived.n) })GL", {"1 2"});
+
+    // Объект, на который ссылается только static-поле, — не мусор: static-поля — корни GC.
+    expectOutput("static_fields_are_gc_roots", R"GL(
+mold Box {
+    let v: int
+    Box(x: int) { v = x }
+}
+mold Registry {
+    static let items: [Box] = [Box(1), Box(2)]
+    static let single: Box = Box(3)
+}
+fn main() {
+    ~gc
+    let h = ~heap
+    print(Registry.items[0].v, Registry.items[1].v, Registry.single.v, h.objectCount)
+})GL", {"1 2 3 4"});
+
+    // Присваивание static-полю новой ссылки освобождает прежний объект.
+    expectOutput("static_field_reassignment_frees_old_object", R"GL(
+mold Box { let v: int }
+mold Holder { static let current: Box = Box() }
+fn main() {
+    ~gc
+    print((~heap).objectCount)
+    Holder.current = null
+    ~gc
+    print((~heap).objectCount)
+})GL", {"1", "0"});
+
+    // toString работает и для static-поля ссылочного типа (статический тип известен).
+    expectOutput("static_field_uses_tostring", R"GL(
+mold Point {
+    let x: int
+    Point(a: int) { x = a }
+    fn toString() -> string { return "Point(" + str(x) + ")" }
+}
+mold Origin { static let zero: Point = Point(0) }
+fn main() { print(Origin.zero, "это " + str(Origin.zero)) })GL", {"Point(0) это Point(0)"});
+
+    // ~layout показывает только поля объекта: static-поля в нём нет.
+    expectOutput("static_fields_not_in_layout", R"GL(
+mold Counter {
+    static let created: int = 0
+    let id: int
+}
+fn main() { print(Counter()~layout) })GL", {"layout(Counter): id@0 (8 байт)"});
+
+    // Доступ: private static виден своему mold'у, protected static — потомку.
+    expectOutput("static_access_inside_and_descendants", R"GL(
+mold Base {
+    private static let secret: int = 7
+    protected static let shared: int = 1
+    static fn reveal() -> int { return secret }
+}
+mold Leaf : Base {
+    static fn viaDescendant() -> int { return shared + Base.shared }
+}
+fn main() { print(Base.reveal(), Leaf.viaDescendant()) })GL", {"7 2"});
+
+    // Ошибка в static-инициализаторе — обычная ошибка выполнения (что она случается именно ДО main,
+    // проверяет debug_tests: там виден вывод программы).
+    expectError("static_initializer_runtime_error_is_reported", R"GL(
+fn boom() -> int { throw Exception("не вышло") }
+mold A { static let n: int = boom() }
+fn main() { print("main не должен выполниться") })GL", "необработанное исключение (Exception): не вышло");
+
+    // Ошибки компиляции.
+    expectError("static_this_rejected", R"GL(
+mold A { static fn f() -> A { return this } }
+fn main() { })GL", "в static-коде нет 'this'");
+    expectError("static_instance_field_rejected", R"GL(
+mold A {
+    let x: int
+    static fn f() -> int { return x }
+}
+fn main() { })GL", "поле 'x' принадлежит объекту, а в static-коде объекта нет");
+    expectError("static_through_instance_rejected", R"GL(
+mold A { static let n: int = 1 }
+fn main() { let a = A()
+    print(a.n) })GL", "поле 'n' объявлено static: обращаться к нему нужно через имя mold'а — A.n");
+    expectError("instance_through_mold_name_rejected", R"GL(
+mold A { let n: int }
+fn main() { print(A.n) })GL", "поле 'n' принадлежит объекту, а не mold'у");
+    expectError("private_static_from_main_rejected", R"GL(
+mold A { private static let n: int = 1 }
+fn main() { print(A.n) })GL", "поле 'n' объявлено private в mold'е 'A'");
 }
 
 }  // namespace
@@ -1326,6 +1596,9 @@ int main() {
     test_all_paths_return();
     test_access_modifiers();
     test_method_call_without_this();
+    test_string_immutability();
+    test_hex_and_address_forms();
+    test_static_members();
 
     testkit::reportSummary();
     return testkit::g_testsFailed == 0 ? 0 : 1;

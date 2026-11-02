@@ -84,8 +84,13 @@ std::string describeIntrospectionObject(ObjInstance* obj) {
         oss << "heap(" << intField(obj, "objectCount") << " объект(ов)):";
         if (names) {
             for (size_t i = 0; i < names->size(); ++i) {
-                oss << (i == 0 ? " " : ", ") << valueToDisplayString((*names)[i]) << "@"
-                    << (addrs && i < addrs->size() ? valueToDisplayString((*addrs)[i]) : "?");
+                // Адрес — в hex, как у print(obj): Класс@0x… (раньше здесь было десятичное число).
+                std::string address = "?";
+                if (addrs && i < addrs->size()) {
+                    const Value& a = (*addrs)[i];
+                    address = std::holds_alternative<long long>(a) ? formatHex(std::get<long long>(a)) : valueToDisplayString(a);
+                }
+                oss << (i == 0 ? " " : ", ") << valueToDisplayString((*names)[i]) << "@" << address;
             }
         }
         return oss.str();
@@ -95,6 +100,14 @@ std::string describeIntrospectionObject(ObjInstance* obj) {
 }
 
 }  // namespace
+
+std::string formatHex(long long n) {
+    // Модуль считаем в беззнаковом типе: у наименьшего long long отрицание в знаковом переполняется.
+    const unsigned long long magnitude = n < 0 ? 0ULL - static_cast<unsigned long long>(n) : static_cast<unsigned long long>(n);
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%s0x%llx", n < 0 ? "-" : "", magnitude);
+    return buffer;
+}
 
 std::string formatDouble(double d) {
     if (std::isnan(d)) return "nan";

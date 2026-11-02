@@ -32,6 +32,7 @@
 | `glass_current_line(session)` | строка, на которой стоит выполнение, или `-1` |
 | `glass_get_call_stack_json(session)` | стек вызовов: `[{"function": "имя", "line": N}, ...]` от текущего кадра к `main` |
 | `glass_get_locals_json(session, frame_depth)` | локальные переменные кадра; объекты и массивы — только ссылкой (адресом) |
+| `glass_get_statics_json(session)` | `static`-поля программы: `[{"class": "Mold", "name": "поле", "value": ...}, ...]`; значения — в той же форме, что у локальных переменных |
 | `glass_get_heap_json(session)` | снимок всей кучи; у каждого объекта признак `reachable` — достижим ли он от корней сборщика |
 | `glass_collect_garbage(session)` | немедленная сборка мусора; возвращает число освобождённых объектов |
 | `glass_get_object_info_json(session, address)` | раскладка полей и vtable объекта по адресу из снимка кучи — ровно то, что вернут `~layout` и `~vtable` |

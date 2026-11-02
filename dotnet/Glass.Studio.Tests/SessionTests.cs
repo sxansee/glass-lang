@@ -51,6 +51,22 @@ namespace Glass.Studio.Tests
             "    print(d.speak())\n" +                                    // 16
             "}\n";                                                        // 17
 
+        internal const string StaticsSource =
+            "mold Box {\n" +                                     // 1
+            "    let v: int\n" +                                 // 2
+            "    Box(x: int) { v = x }\n" +                      // 3
+            "}\n" +                                              // 4
+            "mold Registry {\n" +                                // 5
+            "    static let count: int = 7\n" +                  // 6
+            "    static let item: Box = Box(3)\n" +              // 7
+            "}\n" +                                              // 8
+            "fn probe() -> int {\n" +                            // 9
+            "    return Registry.count\n" +                      // 10
+            "}\n" +                                              // 11
+            "fn main() {\n" +                                    // 12
+            "    print(probe())\n" +                             // 13
+            "}\n";                                               // 14
+
         internal const string GcSource =
             "mold Box {\n" +                      // 1
             "    let value: int\n" +             // 2
@@ -74,6 +90,7 @@ namespace Glass.Studio.Tests
             Add("сессия: во время выполнения читать и запускать второй раз нельзя", GuardsWhileRunning);
             Add("сессия: Dispose во время выполнения не падает", DisposeWhileRunning);
             Add("сессия: состояние на момент рантайм-ошибки сохраняется", RuntimeErrorKeepsState);
+            Add("сессия: static-поля — в снимке, отдельно от локальных переменных", StaticFields);
             Add("сессия: сборка мусора освобождает недостижимое", CollectGarbage);
             Add("сессия: инспектор объекта — раскладка и vtable", InspectObject);
             Add("сессия: глубокая рекурсия — локали только у верхних фреймов", DeepRecursion);
@@ -259,6 +276,25 @@ namespace Glass.Studio.Tests
             CheckEqual(2, crash.CallStack.Count, "стек на момент сбоя сохранён: boom, main");
             CheckEqual("boom", crash.CallStack[0].Function, "упали в boom");
             CheckEqual(2, crash.Heap.Objects.Count, "в куче Box и массив");
+        }
+
+        private static async Task StaticFields()
+        {
+            using DebugSession s = DebugSession.Compile(StaticsSource);
+            s.SetBreakpoints(new[] { 10 });
+            CommandResult r = await s.ContinueAsync();
+            CheckEqual(GlassRunStatus.PausedAtBreakpoint, r.Status, "остановились внутри probe: инициализаторы static уже выполнены");
+
+            DebugSnapshot snap = s.Capture();
+            CheckEqual(2, snap.CallStack.Count, "стек: probe и main (кадра инициализатора уже нет)");
+            CheckEqual(2, snap.Statics.Count, "два static-поля");
+            CheckEqual("Registry.count", snap.Statics[0].QualifiedName, "первое — в порядке объявления");
+            CheckEqual("7", snap.Statics[0].Value.Display, "значение из инициализатора");
+            CheckEqual("Registry.item", snap.Statics[1].QualifiedName, "второе");
+            Check(snap.Statics[1].Value.IsReference, "ссылочное static-поле — ссылка");
+            HeapObject? box = snap.Heap.Objects.FirstOrDefault(o => o.Address == snap.Statics[1].Value.Address);
+            Check(box != null && box.Reachable && box.ClassName == "Box", "объект в куче достижим: его держит static-поле");
+            Check(snap.Frames.All(f => f.Locals.All(l => !l.Name.Contains('.'))), "static-поля не смешиваются с локальными переменными кадров");
         }
 
         private static async Task CollectGarbage()

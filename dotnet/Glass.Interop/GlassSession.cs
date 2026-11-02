@@ -120,6 +120,12 @@ namespace Glass.Interop
             ConsumeUtf8String(NativeMethods.glass_get_locals_json(_handle, frameDepth)) ?? "[]";
 
         /// <summary>
+        /// [{"class": "Mold", "name": "поле", "value": ...}, ...] — static-поля программы (см. GlassApi.h). Одни на весь
+        /// mold, а не на кадр; форма value — как у GetLocalsJson(): объект/массив — только {"ref": "адрес", ...}.
+        /// </summary>
+        public string GetStaticsJson() => ConsumeUtf8String(NativeMethods.glass_get_statics_json(_handle)) ?? "[]";
+
+        /// <summary>
         /// {"objects": [...]} — снимок всей кучи для визуализации (см.
         /// GlassApi.h). "ref" в GetLocalsJson()/полях объектов и
         /// "address" здесь — один и тот же адрес: так строится граф

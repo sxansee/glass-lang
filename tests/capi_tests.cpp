@@ -173,6 +173,82 @@ void test_locals_json_shape() {
     glass_session_free(s);
 }
 
+void test_statics_json_lists_static_fields() {
+    std::string src =
+        "mold Box {\n"                                      // 1
+        "    let v: int\n"                                  // 2
+        "    Box(x: int) { v = x; }\n"                      // 3
+        "}\n"                                               // 4
+        "mold Counter {\n"                                  // 5
+        "    static let created: int = 0\n"                 // 6
+        "    static let ratio: double = 0.5\n"              // 7
+        "    static let label: string = \"c\"\n"            // 8
+        "    static let shared: Box = Box(3)\n"             // 9
+        "    static let unset: int\n"                       // 10
+        "    static fn bump() { created += 1; }\n"          // 11
+        "}\n"                                               // 12
+        "fn main() {\n"                                     // 13
+        "    Counter.bump();\n"                             // 14
+        "    print(Counter.created);\n"                     // 15
+        "}\n";                                              // 16
+    GlassSession* s = glass_compile(src.c_str(), nullptr);
+    CHECK(s != nullptr);
+    if (!s) return;
+    glass_set_breakpoint(s, 15);
+    glass_run_until_pause(s);
+    char* json = glass_get_statics_json(s);
+    CHECK(json != nullptr);
+    if (json) {
+        std::string j(json);
+        // static-поля — одни на весь mold, в порядке объявления; значение после bump() и инициализаторов
+        CHECK(contains(j, "{\"class\":\"Counter\",\"name\":\"created\",\"value\":1}"));
+        CHECK(contains(j, "\"name\":\"ratio\",\"value\":0.5"));
+        CHECK(contains(j, "\"name\":\"label\",\"value\":\"c\""));
+        CHECK(contains(j, "\"name\":\"unset\",\"value\":0"));
+        // ссылочное static-поле — ссылкой на объект, как у локальных переменных
+        CHECK(contains(j, "\"name\":\"shared\",\"value\":{\"ref\":"));
+        CHECK(contains(j, "\"kind\":\"object\",\"class\":\"Box\""));
+        CHECK(j.find("\"name\":\"created\"") < j.find("\"name\":\"ratio\""));
+        CHECK(j.find("\"name\":\"ratio\"") < j.find("\"name\":\"unset\""));
+        // тот же адрес есть в снимке кучи, и объект там достижим — его держит именно static-поле
+        char* heap = glass_get_heap_json(s);
+        if (heap) {
+            std::string h(heap);
+            std::string refKey = "\"shared\",\"value\":{\"ref\":\"";
+            size_t at = j.find(refKey);
+            CHECK(at != std::string::npos);
+            if (at != std::string::npos) {
+                size_t start = at + refKey.size();
+                std::string address = j.substr(start, j.find('"', start) - start);
+                CHECK(contains(h, "{\"address\":\"" + address + "\",\"reachable\":true"));
+            }
+            glass_free_string(heap);
+        }
+        glass_free_string(json);
+    }
+    glass_session_free(s);
+}
+
+void test_statics_json_is_empty_without_statics() {
+    GlassSession* s = glass_compile("fn main() { print(1); }", nullptr);
+    CHECK(s != nullptr);
+    if (!s) return;
+    char* json = glass_get_statics_json(s);
+    CHECK(json != nullptr);
+    if (json) {
+        CHECK_EQ(std::string(json), std::string("[]"));
+        glass_free_string(json);
+    }
+    glass_session_free(s);
+
+    char* nullJson = glass_get_statics_json(nullptr);
+    CHECK(nullJson != nullptr);
+    if (nullJson) {
+        CHECK_EQ(std::string(nullJson), std::string("[]"));
+        glass_free_string(nullJson);
+    }
+}
+
 void test_heap_json_matches_local_reference() {
     std::string src =
         "mold Point {\n"
@@ -605,6 +681,8 @@ int main() {
 
     test_call_stack_json_shape();
     test_locals_json_shape();
+    test_statics_json_lists_static_fields();
+    test_statics_json_is_empty_without_statics();
     test_heap_json_matches_local_reference();
 
     test_null_session_does_not_crash();

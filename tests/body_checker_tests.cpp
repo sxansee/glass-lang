@@ -5,6 +5,7 @@
 #include "../src/parser/Parser.h"
 #include "../src/sema/BodyChecker.h"
 #include "../src/sema/Sema.h"
+#include "../src/util/Plural.h"
 #include "test_framework.h"
 
 using namespace glass;
@@ -348,6 +349,241 @@ void test_method_and_constructor_without_result_are_clean() {
                     "    fn show() { if n > 0 { print(n); } }\n}");
 }
 
+// --- присваивание элементу строки ---
+
+void test_string_element_assignment_is_error() {
+    expectErrorContaining("string_element_assignment_is_error",
+                           std::string(PREAMBLE) + "fn f() { let s = \"abc\"; s[0] = \"x\"; }",
+                           "строки неизменяемы");
+    expectErrorContaining("string_element_compound_assignment_is_error",
+                           std::string(PREAMBLE) + "fn f() { let s = \"abc\"; s[0] += \"x\"; }",
+                           "строки неизменяемы");
+    expectErrorContaining("string_element_assignment_through_field_is_error",
+                           std::string(PREAMBLE) +
+                               "mold A {\n    let name: string\n    fn f() { name[0] = \"x\"; }\n}",
+                           "строки неизменяемы");
+}
+
+void test_array_element_assignment_is_still_clean() {
+    expectClean("array_element_assignment_is_still_clean",
+                std::string(PREAMBLE) + "fn f() { let xs = [1, 2, 3]; xs[0] = 9; xs[1] += 1; }");
+    // Массив строк: присваивание элементу МАССИВА разрешено, а символу внутри элемента — нет.
+    expectClean("string_array_element_assignment_is_clean",
+                std::string(PREAMBLE) + "fn f() { let names = [\"a\", \"b\"]; names[0] = \"z\"; }");
+    expectErrorContaining("char_inside_string_array_element_is_error",
+                           std::string(PREAMBLE) + "fn f() { let names = [\"a\", \"b\"]; names[0][0] = \"z\"; }",
+                           "строки неизменяемы");
+}
+
+// --- склонение по числу ---
+
+void test_russian_plural_forms() {
+    using glass::countWithWord;
+    const char* a = "ошибка";
+    const char* b = "ошибки";
+    const char* c = "ошибок";
+    CHECK_EQ(countWithWord(0, a, b, c), std::string("0 ошибок"));
+    CHECK_EQ(countWithWord(1, a, b, c), std::string("1 ошибка"));
+    CHECK_EQ(countWithWord(2, a, b, c), std::string("2 ошибки"));
+    CHECK_EQ(countWithWord(4, a, b, c), std::string("4 ошибки"));
+    CHECK_EQ(countWithWord(5, a, b, c), std::string("5 ошибок"));
+    CHECK_EQ(countWithWord(11, a, b, c), std::string("11 ошибок"));
+    CHECK_EQ(countWithWord(12, a, b, c), std::string("12 ошибок"));
+    CHECK_EQ(countWithWord(14, a, b, c), std::string("14 ошибок"));
+    CHECK_EQ(countWithWord(21, a, b, c), std::string("21 ошибка"));
+    CHECK_EQ(countWithWord(22, a, b, c), std::string("22 ошибки"));
+    CHECK_EQ(countWithWord(25, a, b, c), std::string("25 ошибок"));
+    CHECK_EQ(countWithWord(101, a, b, c), std::string("101 ошибка"));
+    CHECK_EQ(countWithWord(111, a, b, c), std::string("111 ошибок"));
+    CHECK_EQ(countWithWord(112, a, b, c), std::string("112 ошибок"));
+}
+
+// --- static-члены ---
+
+// Общая заготовка: счётчик с static-полем и static-методом, обычным полем и методом.
+const char* COUNTER =
+    "mold Counter {\n"
+    "    static let created: int = 0\n"
+    "    private static let secret: int = 7\n"
+    "    protected static let shared: int = 1\n"
+    "    let id: int\n"
+    "    Counter() { created += 1; id = created; }\n"
+    "    static fn total() -> int { return created; }\n"
+    "    static fn twice() -> int { return total() * 2; }\n"
+    "    private static fn hidden() -> int { return secret; }\n"
+    "    fn myId() -> int { return id + total() + Counter.created; }\n"
+    "}\n";
+
+std::string withCounter(const std::string& rest) { return std::string(PREAMBLE) + COUNTER + rest; }
+
+void test_static_baseline_counter_is_clean() {
+    // Заодно: static по простому имени из обычного метода, конструктора и другого static-метода;
+    // Mold.поле и Mold.метод() изнутри; private static из своего mold'а.
+    expectClean("static_baseline_counter_is_clean", withCounter(""));
+}
+
+void test_static_members_from_outside_are_clean() {
+    expectClean("static_members_from_outside_are_clean",
+                withCounter("fn f() -> int { Counter.created = 5; Counter.created += 1; return Counter.total() + Counter.created; }"));
+}
+
+void test_static_inherited_through_derived_name_is_clean() {
+    expectClean("static_inherited_through_derived_name_is_clean",
+                withCounter("mold Special : Counter {\n    fn g() -> int { return created + total() + shared + Special.created + Special.total(); }\n}\n"
+                            "fn f() -> int { return Special.created + Special.total(); }"));
+}
+
+void test_static_initializer_sees_private_constructor_and_statics() {
+    expectClean("static_initializer_sees_private_constructor_and_statics",
+                std::string(PREAMBLE) +
+                    "mold Config {\n    static let base: int = 10\n    static let derived: int = base + 1\n"
+                    "    static let instance: Config = Config()\n    private Config() { }\n"
+                    "    static fn get() -> Config { return instance; }\n}");
+}
+
+void test_static_call_without_qualifier_is_rewritten_to_mold_call() {
+    // Подмена видна в AST: callee стал Counter.total с размеченным владельцем, имя типа — isTypeName.
+    Lexer lexer(std::string(PREAMBLE) + COUNTER);
+    Parser parser(lexer.tokenize());
+    Program prog = parser.parseProgram();
+    CHECK(parser.errors().empty());
+    Sema sema;
+    CHECK(sema.analyze(prog).empty());
+    BodyChecker checker(sema);
+    CHECK(checker.checkProgram(prog).empty());
+
+    bool rewritten = false;
+    for (auto& decl : prog.declarations) {
+        auto* mold = std::get_if<MoldDecl>(&decl);
+        if (!mold || mold->name != "Counter") continue;
+        for (auto& member : mold->members) {
+            auto* method = std::get_if<MethodDecl>(&member);
+            if (!method || method->name != "twice") continue;
+            auto* ret = dynamic_cast<ReturnStmt*>(method->body->statements.at(0).get());
+            auto* mul = ret ? dynamic_cast<BinaryExpr*>(ret->value.get()) : nullptr;
+            auto* call = mul ? dynamic_cast<CallExpr*>(mul->left.get()) : nullptr;
+            auto* access = call ? dynamic_cast<FieldAccessExpr*>(call->callee.get()) : nullptr;
+            auto* typeName = access ? dynamic_cast<IdentifierExpr*>(access->target.get()) : nullptr;
+            rewritten = access && access->name == "total" && access->staticOwner == "Counter" && typeName &&
+                        typeName->isTypeName && typeName->name == "Counter";
+        }
+    }
+    CHECK(rewritten);
+}
+
+void test_this_in_static_method_is_error() {
+    expectErrorContaining("this_in_static_method_is_error",
+                           std::string(PREAMBLE) + "mold A {\n    static fn f() -> A { return this; }\n}",
+                           "в static-коде нет 'this'");
+}
+
+void test_super_in_static_method_is_error() {
+    expectErrorContaining("super_in_static_method_is_error",
+                           std::string(PREAMBLE) +
+                               "mold A {\n    fn g() -> int { return 1; }\n}\n"
+                               "mold B : A {\n    static fn f() -> int { return super.g(); }\n}",
+                           "в static-коде нет 'super'");
+}
+
+void test_this_in_static_initializer_is_error() {
+    expectErrorContaining("this_in_static_initializer_is_error",
+                           std::string(PREAMBLE) + "mold A {\n    static let me: A = this\n}",
+                           "в static-коде нет 'this'");
+}
+
+void test_instance_field_in_static_method_is_error() {
+    expectErrorContaining("instance_field_in_static_method_is_error",
+                           std::string(PREAMBLE) + "mold A {\n    let x: int\n    static fn f() -> int { return x; }\n}",
+                           "поле 'x' принадлежит объекту, а в static-коде объекта нет");
+}
+
+void test_instance_method_in_static_method_is_error() {
+    expectErrorContaining("instance_method_in_static_method_is_error",
+                           std::string(PREAMBLE) + "mold A {\n    fn g() -> int { return 1; }\n    static fn f() -> int { return g(); }\n}",
+                           "метод 'g' принадлежит объекту, а в static-коде объекта нет");
+}
+
+void test_static_member_through_instance_is_error() {
+    expectErrorContaining("static_field_through_instance_is_error",
+                           withCounter("fn f() { let c = Counter(); let n = c.created; }"),
+                           "поле 'created' объявлено static: обращаться к нему нужно через имя mold'а — Counter.created");
+    expectErrorContaining("static_method_through_instance_is_error",
+                           withCounter("fn f() { let c = Counter(); let n = c.total(); }"),
+                           "метод 'total' объявлен static: вызывать его нужно через имя mold'а — Counter.total(...)");
+    expectErrorContaining("static_method_through_this_is_error",
+                           std::string(PREAMBLE) +
+                               "mold A {\n    static fn s() -> int { return 1; }\n    fn f() -> int { return this.s(); }\n}",
+                           "метод 's' объявлен static");
+    expectErrorContaining("static_method_through_super_is_error",
+                           std::string(PREAMBLE) +
+                               "mold A {\n    static fn s() -> int { return 1; }\n}\n"
+                               "mold B : A {\n    fn f() -> int { return super.s(); }\n}",
+                           "метод 's' объявлен static");
+}
+
+void test_instance_member_through_mold_name_is_error() {
+    expectErrorContaining("instance_field_through_mold_name_is_error",
+                           withCounter("fn f() { let n = Counter.id; }"),
+                           "поле 'id' принадлежит объекту, а не mold'у");
+    expectErrorContaining("instance_method_through_mold_name_is_error",
+                           withCounter("fn f() { let n = Counter.myId(); }"),
+                           "метод 'myId' принадлежит объекту, а не mold'у");
+}
+
+void test_unknown_static_member_is_error() {
+    expectErrorContaining("unknown_static_field_is_error", withCounter("fn f() { let n = Counter.nothing; }"),
+                           "у mold 'Counter' нет static-поля 'nothing'");
+    expectErrorContaining("unknown_static_method_is_error", withCounter("fn f() { let n = Counter.nothing(); }"),
+                           "у mold 'Counter' нет static-метода 'nothing'");
+}
+
+void test_mold_name_as_value_is_error() {
+    expectErrorContaining("mold_name_as_value_is_error", withCounter("fn f() { let c = Counter; }"),
+                           "'Counter' — имя mold'а, а не значение");
+}
+
+void test_variable_shadows_mold_name_for_static_access() {
+    // Переменная с тем же именем, что у mold'а, перекрывает имя типа: тогда это доступ через экземпляр.
+    expectErrorContaining("variable_shadows_mold_name_for_static_access",
+                           withCounter("fn f() { let Counter = Counter(); let n = Counter.created; }"),
+                           "поле 'created' объявлено static");
+}
+
+void test_static_access_modifiers_apply() {
+    expectErrorContaining("private_static_field_outside_is_error", withCounter("fn f() { let n = Counter.secret; }"),
+                           "поле 'secret' объявлено private в mold'е 'Counter'");
+    expectErrorContaining("private_static_method_outside_is_error", withCounter("fn f() { let n = Counter.hidden(); }"),
+                           "метод 'hidden' объявлен private в mold'е 'Counter'");
+    expectErrorContaining("protected_static_field_outside_is_error", withCounter("fn f() { let n = Counter.shared; }"),
+                           "поле 'shared' объявлено protected в mold'е 'Counter'");
+    expectErrorContaining("private_static_field_in_descendant_is_error",
+                           withCounter("mold Special : Counter {\n    fn g() -> int { return secret; }\n}"),
+                           "поле 'secret' объявлено private в mold'е 'Counter'");
+}
+
+void test_static_initializer_type_is_checked() {
+    expectErrorContaining("static_initializer_type_is_checked",
+                           std::string(PREAMBLE) + "mold A {\n    static let n: int = \"текст\"\n}",
+                           "не совместим с ожидаемым");
+}
+
+void test_static_call_arguments_are_checked() {
+    expectErrorContaining("static_call_arity_is_checked",
+                           std::string(PREAMBLE) +
+                               "mold A {\n    static fn add(a: int, b: int) -> int { return a + b; }\n}\nfn f() { let n = A.add(1); }",
+                           "неверное число аргументов");
+    expectErrorContaining("static_call_argument_type_is_checked",
+                           std::string(PREAMBLE) +
+                               "mold A {\n    static fn add(a: int, b: int) -> int { return a + b; }\n}\nfn f() { let n = A.add(1, \"x\"); }",
+                           "не совместим с ожидаемым");
+}
+
+void test_static_method_missing_return_is_error() {
+    expectErrorContaining("static_method_missing_return_is_error",
+                           std::string(PREAMBLE) + "mold A {\n    static fn f(x: int) -> int { if x > 0 { return 1; } }\n}",
+                           "не все ветки метода 'f' mold'а 'A'");
+}
+
 // --- вызов метода без this. ---
 
 void test_method_call_without_this_is_clean() {
@@ -408,13 +644,6 @@ void test_local_variable_still_hides_method_name() {
                            std::string(PREAMBLE) +
                                "mold A {\n    fn g() -> int { return 1; }\n    fn f() -> int { let g = 5; return g(); }\n}",
                            "переменная, а не функция");
-}
-
-void test_static_method_still_not_callable_without_this() {
-    expectErrorContaining("static_method_still_not_callable_without_this",
-                           std::string(PREAMBLE) +
-                               "mold A {\n    static fn s() -> int { return 1; }\n    fn f() -> int { return s(); }\n}",
-                           "неизвестная функция или mold 's'");
 }
 
 void test_unknown_name_in_free_function_is_still_error() {
@@ -780,6 +1009,30 @@ int main() {
     test_method_missing_return_is_error();
     test_method_and_constructor_without_result_are_clean();
 
+    test_string_element_assignment_is_error();
+    test_array_element_assignment_is_still_clean();
+    test_russian_plural_forms();
+
+    test_static_baseline_counter_is_clean();
+    test_static_members_from_outside_are_clean();
+    test_static_inherited_through_derived_name_is_clean();
+    test_static_initializer_sees_private_constructor_and_statics();
+    test_static_call_without_qualifier_is_rewritten_to_mold_call();
+    test_this_in_static_method_is_error();
+    test_super_in_static_method_is_error();
+    test_this_in_static_initializer_is_error();
+    test_instance_field_in_static_method_is_error();
+    test_instance_method_in_static_method_is_error();
+    test_static_member_through_instance_is_error();
+    test_instance_member_through_mold_name_is_error();
+    test_unknown_static_member_is_error();
+    test_mold_name_as_value_is_error();
+    test_variable_shadows_mold_name_for_static_access();
+    test_static_access_modifiers_apply();
+    test_static_initializer_type_is_checked();
+    test_static_call_arguments_are_checked();
+    test_static_method_missing_return_is_error();
+
     test_method_call_without_this_is_clean();
     test_method_call_without_this_in_constructor_is_clean();
     test_method_call_without_this_checks_arguments();
@@ -788,7 +1041,6 @@ int main() {
     test_function_wins_over_method_without_this();
     test_builtin_wins_over_method_without_this();
     test_local_variable_still_hides_method_name();
-    test_static_method_still_not_callable_without_this();
     test_unknown_name_in_free_function_is_still_error();
     test_unknown_name_inside_mold_is_still_error();
     test_method_call_without_this_is_rewritten_to_this_call();

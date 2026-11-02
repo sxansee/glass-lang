@@ -10,7 +10,7 @@ namespace glass {
 
 enum class Builtin : int {
     // --- функции ---
-    Len, Str, ToInt, ToDouble, ToBool, Range, Abs, Min, Max, Sum, Sqrt, Pow, Floor, Ceil, Round,
+    Len, Str, ToInt, ToDouble, ToBool, Range, Abs, Min, Max, Sum, Sqrt, Pow, Floor, Ceil, Round, Hex,
     // --- методы массивов (первый аргумент — сам массив) ---
     ArrAppend, ArrPop, ArrInsert, ArrRemove, ArrContains, ArrIndexOf, ArrReverse, ArrSort, ArrClear, ArrJoin,
     // --- методы строк (первый аргумент — сама строка) ---
@@ -42,7 +42,7 @@ inline const BuiltinDef* findBuiltinFunction(const std::string& name) {
         {"range", Builtin::Range},   {"abs", Builtin::Abs},     {"min", Builtin::Min},
         {"max", Builtin::Max},       {"sum", Builtin::Sum},     {"sqrt", Builtin::Sqrt},
         {"pow", Builtin::Pow},       {"floor", Builtin::Floor}, {"ceil", Builtin::Ceil},
-        {"round", Builtin::Round},
+        {"round", Builtin::Round},   {"hex", Builtin::Hex},
     };
     return builtin_detail::find(table, name);
 }

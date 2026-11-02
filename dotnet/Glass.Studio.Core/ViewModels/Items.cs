@@ -51,13 +51,25 @@ namespace Glass.Studio.ViewModels
             Value = variable.Value;
         }
 
+        /// <summary>Строка панели для static-поля: «Mold.поле», тип с пометкой static — отличить от локальных переменных.</summary>
+        public LocalItem(StaticVariable variable)
+        {
+            Name = variable.QualifiedName;
+            Value = variable.Value;
+            IsStatic = true;
+        }
+
         public string Name { get; }
+        /// <summary>static-поле (а не локальная переменная кадра).</summary>
+        public bool IsStatic { get; }
         public GlassValue Value { get; }
         public bool IsReference => Value.IsReference;
         public string? Address => Value.Address;
 
-        /// <summary>Что показывать в колонке «Тип»: примитив, имя mold'а или array[N].</summary>
-        public string TypeText
+        /// <summary>Что показывать в колонке «Тип»: примитив, имя mold'а или array[N]; у static-поля — с пометкой static.</summary>
+        public string TypeText => IsStatic ? "static " + ValueTypeText : ValueTypeText;
+
+        private string ValueTypeText
         {
             get
             {

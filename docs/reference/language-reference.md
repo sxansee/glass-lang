@@ -2,7 +2,7 @@
 
 > Файл **генерируется** из `LanguageReference` — тех же записей, по которым IDE строит карточки элементов кода. Не правьте его вручную: измените запись в `dotnet/Glass.Studio.Core/CodeInfo/LanguageReference.cs` и выполните `GLASS_UPDATE_DOCS=1 dotnet run -c Release -- документация` (см. [сборку и тесты](../building.md)).
 
-Записей: 76. Подробные объяснения с исполняемыми примерами — на страницах языка из [оглавления](../README.md).
+Записей: 77. Подробные объяснения с исполняемыми примерами — на страницах языка из [оглавления](../README.md).
 
 ## Содержание
 
@@ -11,7 +11,7 @@
 - [Типы данных](#типы-данных) — `int`, `double`, `bool`, `string`
 - [Значения](#значения) — `true`, `false`, `null`
 - [Встроенные константы](#встроенные-константы) — `PI`, `E`
-- [Встроенные функции](#встроенные-функции) — `print`, `len`, `str`, `string`, `int`, `double`, `bool`, `range`, `abs`, `min`, `max`, `sum`, `sqrt`, `pow`, `floor`, `ceil`, `round`
+- [Встроенные функции](#встроенные-функции) — `print`, `len`, `str`, `string`, `int`, `double`, `bool`, `range`, `hex`, `abs`, `min`, `max`, `sum`, `sqrt`, `pow`, `floor`, `ceil`, `round`
 - [Методы массивов](#методы-массивов) — `append`, `pop`, `insert`, `remove`, `contains`, `indexOf`, `reverse`, `sort`, `clear`, `join`
 - [Методы строк](#методы-строк) — `upper`, `lower`, `trim`, `contains`, `startsWith`, `endsWith`, `indexOf`, `replace`, `split`, `repeat`
 - [Свойства](#свойства) — `length`
@@ -348,10 +348,26 @@ override fn имя() -> тип
 *модификатор*
 
 ```
-static fn имя()
+static let имя: тип = значение
 ```
 
-Член принадлежит самому mold, а не объектам. Статический метод не входит в vtable. Пока объявление разбирается, но вызвать статический метод нельзя.
+Член принадлежит самому mold, а не объектам. static-поле — одна переменная на весь mold (её нет в раскладке объекта), инициализируется один раз до main; static-метод вызывается как Mold.метод(), у него нет this. Обращаться к static-членам нужно через имя mold, а не через объект.
+
+Пример:
+
+```glass
+mold Counter {
+    static let created: int = 0
+
+    static fn total() -> int {
+        return created
+    }
+}
+
+fn main() {
+    print(Counter.total())
+}
+```
 
 Подробнее: [language/objects.md](../language/objects.md)
 
@@ -698,6 +714,25 @@ for i in range(2, 10, 3) {
 ```
 
 Подробнее: [language/control-flow.md](../language/control-flow.md)
+
+### `hex`
+
+*встроенная функция*
+
+```
+hex(n) -> string
+```
+
+Целое число в шестнадцатеричном виде с префиксом 0x: hex(255) — "0xff", отрицательные — со знаком минус. Так же print показывает адрес объекта, поэтому hex(объект~address) совпадает с адресом в Класс@0x….
+
+Пример:
+
+```glass
+hex(255)  // "0xff"
+hex(объект~address)  // "0x…"
+```
+
+Подробнее: [language/introspection.md](../language/introspection.md)
 
 ### `abs`
 

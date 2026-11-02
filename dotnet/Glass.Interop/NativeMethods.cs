@@ -121,6 +121,9 @@ namespace Glass.Interop
         internal static extern IntPtr glass_get_locals_json(GlassSessionHandle session, int frameDepth);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern IntPtr glass_get_statics_json(GlassSessionHandle session);
+
+        [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
         internal static extern IntPtr glass_get_heap_json(GlassSessionHandle session);
 
         [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]

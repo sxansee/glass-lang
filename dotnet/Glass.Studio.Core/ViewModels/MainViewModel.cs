@@ -52,6 +52,7 @@ namespace Glass.Studio.ViewModels
         private StackFrameItem? _selectedFrame;
         private LocalItem? _selectedLocal;
         private IReadOnlyList<FrameLocals> _frames = Array.Empty<FrameLocals>();
+        private IReadOnlyList<StaticVariable> _statics = Array.Empty<StaticVariable>();
         private HeapSnapshot _heap = HeapSnapshot.Empty;
         private HeapSnapshot? _previousHeap;
         private bool _hasHeap;
@@ -485,6 +486,7 @@ namespace Glass.Studio.ViewModels
         {
             Output = snapshot.Output;
             _frames = snapshot.Frames;
+            _statics = snapshot.Statics;
             CallStack = snapshot.CallStack.Select((f, i) => new StackFrameItem(i, f.Function, f.Line)).ToList();
 
             _previousHeap = _hasHeap ? _heap : null;
@@ -514,14 +516,19 @@ namespace Glass.Studio.ViewModels
         private void ShowLocals(int depth)
         {
             FrameLocals? frame = _frames.FirstOrDefault(f => f.Depth == depth);
-            Locals = frame == null ? Array.Empty<LocalItem>() : frame.Locals.Select(l => new LocalItem(l)).ToList();
+            // Локальные переменные выбранного кадра, а следом — static-поля: они общие для всех кадров и
+            // видны при любом выбранном (в программе без static-полей список прежний).
+            var items = new List<LocalItem>();
+            if (frame != null) items.AddRange(frame.Locals.Select(l => new LocalItem(l)));
+            items.AddRange(_statics.Select(s => new LocalItem(s)));
+            Locals = items;
             _selectedLocal = null;
             OnPropertyChanged(nameof(SelectedLocal));
         }
 
         private void RebuildHeapGraph()
         {
-            HeapGraph = HeapGraphBuilder.Build(_heap, _frames, _previousHeap, _selectedAddress);
+            HeapGraph = HeapGraphBuilder.Build(_heap, _frames, _previousHeap, _selectedAddress, _statics);
             OnPropertyChanged(nameof(HeapSummary));
         }
 
@@ -602,6 +609,7 @@ namespace Glass.Studio.ViewModels
             old?.Dispose();
 
             _frames = Array.Empty<FrameLocals>();
+            _statics = Array.Empty<StaticVariable>();
             CallStack = Array.Empty<StackFrameItem>();
             Locals = Array.Empty<LocalItem>();
             _selectedFrame = null;

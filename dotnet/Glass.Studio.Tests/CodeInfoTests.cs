@@ -327,6 +327,22 @@ fn main() {
             Check(changed >= 5, "ViewModel сообщает об изменениях (" + changed + ")");
             card.Clear();
             Check(card.Info == null, "Clear");
+
+            // Открытие и закрытие карточки (то, что делают правая кнопка мыши и F1).
+            var popup = new CodeInfoCardViewModel();
+            Check(!popup.IsOpen, "карточка по умолчанию закрыта");
+            var opened = new List<string>();
+            popup.PropertyChanged += (_, e) => opened.Add(e.PropertyName ?? "");
+            Check(popup.Open("let x = 5", 1), "Open возвращает true, когда подсказка есть");
+            Check(popup.IsOpen && popup.HasInfo, "карточка открыта и показывает элемент");
+            Check(opened.Contains("IsOpen"), "ViewModel сообщает об изменении IsOpen");
+            Check(!popup.Open("a ; b", 2), "Open возвращает false, когда подсказки нет");
+            Check(popup.IsOpen && !popup.HasInfo && popup.HasNoInfo, "без подсказки карточка всё равно открыта — с действиями редактора");
+            popup.Close();
+            Check(!popup.IsOpen && !popup.HasInfo, "Close закрывает карточку и забывает подсказку");
+            popup.Open("while", 1);
+            popup.IsOpen = false;   // так закрывает Popup при клике мимо (TwoWay-привязка)
+            Check(!popup.IsOpen, "IsOpen можно сбросить снаружи");
         }
     }
 }

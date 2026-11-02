@@ -120,6 +120,15 @@ public:
     // временные — см. Chunk.h: CompiledFunction::localNames) пропускаются.
     std::vector<LocalVarView> locals(size_t depthFromTop = 0) const;
 
+    struct StaticVarView {
+        std::string className;  // mold, в котором поле объявлено
+        std::string name;
+        Value value;
+    };
+    // static-поля программы (в порядке объявления): значения по умолчанию видны сразу, инициализаторы — после
+    // их выполнения (до main). Корни GC наравне со стеком — объект, на который ссылается только static-поле, достижим.
+    std::vector<StaticVarView> staticVars() const;
+
     struct HeapObjectView {
         uintptr_t address = 0;
         bool isArray = false;
@@ -175,6 +184,9 @@ private:
 
     CompiledProgram program_;
     std::vector<Value> stack_;
+    // Статическая область: значения static-полей (индексы — CompiledProgram::statics). Живёт всю работу
+    // программы и входит в корни GC наравне со stack_: объект, на который ссылается только static-поле, не мусор.
+    std::vector<Value> statics_;
     std::vector<Frame> frames_;
     std::vector<std::string> errors_;
     std::vector<std::string> output_;
@@ -240,7 +252,8 @@ private:
     std::vector<int> breakpointLines_;  // отсортированный список; количество точек останова всегда мало
 
     // Кладёт main() в frames_/stack_ — один раз на весь жизненный цикл
-    // VM. false, если в программе нет main (тогда уже выставлен hadRuntimeError_/errors_).
+    // VM (а поверх него — инициализатор static-полей, если он есть: он выполнится первым и вернётся в main).
+    // false, если в программе нет main (тогда уже выставлен hadRuntimeError_/errors_).
     bool startExecution();
     // Один шаг — одна инструкция текущего (верхнего) фрейма. Общая для
     // run() (гоняет её по кругу до конца, не глядя на точки останова) и

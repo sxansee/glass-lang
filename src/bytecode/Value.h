@@ -35,6 +35,9 @@ inline double toDouble(const Value& v) {
 // Число с плавающей точкой для людей: до 15 значащих цифр и ВСЕГДА с точкой или экспонентой
 // (3.0, 2.5, 1e+20) — чтобы double был виден как double, а не как int. inf/nan — "inf", "-inf", "nan".
 std::string formatDouble(double d);
+// Целое числом в шестнадцатеричном виде с префиксом: 255 → "0xff", -255 → "-0xff" (как hex() в Python).
+// Так же печатается адрес объекта: print(obj) → Класс@0x…, ~heap → Класс@0x…, hex(obj~address).
+std::string formatHex(long long n);
 
 // Как print показывает значение: строка — как есть; массив — [1, 2, 3], строки внутри в кавычках.
 std::string valueToDisplayString(const Value& v);

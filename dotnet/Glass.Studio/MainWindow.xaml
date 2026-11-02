@@ -42,6 +42,7 @@
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Margin" Value="5,0,14,0" />
         </Style>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
     </Window.Resources>
 
     <DockPanel>
@@ -236,7 +237,51 @@
                             </Border.Style>
                             <TextBlock Text="Код изменён после запуска: подсветка строки может не совпадать с выполняемой программой. Остановите (Shift+F5) и запустите заново." TextWrapping="Wrap" />
                         </Border>
+                        <!-- Карточка элемента кода: правая кнопка мыши над словом или F1 под курсором. Положение и открытие — в code-behind (OnEditorRightClick, OnEditorPreviewKeyDown). -->
+                        <Popup x:Name="CardPopup"
+                               DockPanel.Dock="Top"
+                               IsOpen="{Binding InfoCard.IsOpen, Mode=TwoWay}"
+                               StaysOpen="False"
+                               Placement="Relative"
+                               AllowsTransparency="True"
+                               PopupAnimation="Fade">
+                            <Border Style="{StaticResource CardBorder}" DataContext="{Binding InfoCard}" KeyDown="OnCardKeyDown">
+                                <StackPanel>
+                                    <StackPanel Visibility="{Binding HasInfo, Converter={StaticResource BoolToVisibility}}">
+                                        <DockPanel LastChildFill="False">
+                                            <TextBlock DockPanel.Dock="Left" Style="{StaticResource CardTitle}" Text="{Binding Title}" />
+                                            <Border DockPanel.Dock="Left" Style="{StaticResource CardKindChip}">
+                                                <TextBlock Style="{StaticResource CardKindText}" Text="{Binding KindText}" />
+                                            </Border>
+                                        </DockPanel>
+                                        <TextBlock Style="{StaticResource CardDescription}" Text="{Binding Description}" />
+                                        <Border Style="{StaticResource CardExample}"
+                                                Visibility="{Binding HasExample, Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock Style="{StaticResource MonoText}" TextWrapping="Wrap" Text="{Binding Example}" />
+                                        </Border>
+                                        <TextBlock Style="{StaticResource CardOrigin}" Text="{Binding Origin}"
+                                                   Visibility="{Binding HasOrigin, Converter={StaticResource BoolToVisibility}}" />
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource MutedText}" Text="Для этого места подсказки нет."
+                                               Visibility="{Binding HasNoInfo, Converter={StaticResource BoolToVisibility}}" />
+                                    <Border Style="{StaticResource CardActions}">
+                                        <WrapPanel>
+                                            <Button Style="{StaticResource CardAction}" Content="Документация" Click="OnCardOpenDocs"
+                                                    Visibility="{Binding HasDoc, Converter={StaticResource BoolToVisibility}}" />
+                                            <Button Style="{StaticResource CardAction}" Content="Копировать пример" Click="OnCardCopyExample"
+                                                    Visibility="{Binding HasExample, Converter={StaticResource BoolToVisibility}}" />
+                                            <Button Style="{StaticResource CardAction}" Content="Вырезать" Click="OnCardCut" />
+                                            <Button Style="{StaticResource CardAction}" Content="Копировать" Click="OnCardCopy" />
+                                            <Button Style="{StaticResource CardAction}" Content="Вставить" Click="OnCardPaste" />
+                                            <Button Style="{StaticResource CardAction}" Content="Точка останова" Click="OnCardToggleBreakpoint" />
+                                        </WrapPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
                         <avalon:TextEditor x:Name="CodeEditor"
+                                           PreviewMouseRightButtonUp="OnEditorRightClick"
+                                           PreviewKeyDown="OnEditorPreviewKeyDown"
                                            FontFamily="Cascadia Mono, Consolas, Courier New"
                                            FontSize="14"
                                            ShowLineNumbers="True"
@@ -505,8 +550,8 @@
                                           SelectionMode="Single" BorderThickness="0">
                                     <ListView.View>
                                         <GridView>
-                                            <GridViewColumn Header="Имя" Width="90" DisplayMemberBinding="{Binding Name}" />
-                                            <GridViewColumn Header="Тип" Width="80" DisplayMemberBinding="{Binding TypeText}" />
+                                            <GridViewColumn Header="Имя" Width="130" DisplayMemberBinding="{Binding Name}" />
+                                            <GridViewColumn Header="Тип" Width="90" DisplayMemberBinding="{Binding TypeText}" />
                                             <GridViewColumn Header="Значение" Width="150">
                                                 <GridViewColumn.CellTemplate>
                                                     <DataTemplate DataType="{x:Type vm:LocalItem}">

@@ -15,6 +15,7 @@ namespace Glass.Studio.Tests
             Add("json: стек вызовов", CallStack);
             Add("json: локальные переменные всех видов", Locals);
             Add("json: double всегда отличим от int", DoubleVersusInt);
+            Add("json: static-поля — значения и ссылки", Statics);
             Add("json: куча — объекты, массивы, reachable", Heap);
             Add("json: информация об объекте и массиве, null", ObjectInfo);
             Add("json: мусор вместо JSON — исключение, а не тихая пустота", Garbage);
@@ -29,6 +30,24 @@ namespace Glass.Studio.Tests
             CheckEqual("Dog.speak", frames[0].Function, "имя метода с классом");
             CheckEqual(12, frames[0].Line, "строка верхнего фрейма");
             CheckEqual(0, GlassJson.ParseCallStack("[]").Count, "пустой стек");
+        }
+
+        private static void Statics()
+        {
+            var statics = GlassJson.ParseStatics(
+                "[{\"class\":\"Counter\",\"name\":\"created\",\"value\":2}," +
+                "{\"class\":\"Counter\",\"name\":\"label\",\"value\":\"c\"}," +
+                "{\"class\":\"Config\",\"name\":\"instance\",\"value\":{\"ref\":\"1000\",\"kind\":\"object\",\"class\":\"Config\"}}]");
+            CheckEqual(3, statics.Count, "три static-поля");
+            CheckEqual("Counter.created", statics[0].QualifiedName, "имя в записи Mold.поле");
+            CheckEqual("Counter", statics[0].ClassName, "mold, в котором объявлено");
+            CheckEqual(ValueKind.Int, statics[0].Value.Kind, "int");
+            CheckEqual("2", statics[0].Value.Display, "значение");
+            CheckEqual(ValueKind.String, statics[1].Value.Kind, "строка");
+            Check(statics[2].Value.IsReference, "ссылочное поле — ссылка");
+            CheckEqual("1000", statics[2].Value.Address, "адрес ссылки");
+            CheckEqual(0, GlassJson.ParseStatics("[]").Count, "пусто — static-полей нет");
+            CheckThrows<InvalidOperationException>(() => GlassJson.ParseStatics("{}"), "ParseStatics: не массив");
         }
 
         private static void Locals()

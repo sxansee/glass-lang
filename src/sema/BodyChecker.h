@@ -88,6 +88,17 @@ private:
     void defineVar(const std::string& name, const TypeNode& type, int line, int col);
     std::optional<TypeNode> lookupVar(const std::string& name) const;
 
+    // --- static-члены ---
+    // true внутри static-метода и инициализатора static-поля: там нет this, а значит нет полей и методов объекта.
+    bool inStaticContext_ = false;
+    // Имя mold'а, если выражение — имя типа слева от точки в записи «Mold.член»: голый идентификатор, не
+    // перекрытый локальной переменной или полем текущего mold'а, и называющий известный mold. Иначе — пусто.
+    std::string moldNameOf(const Expr& e) const;
+    // Mold.поле — static-поле: разбор и разметка AST (FieldAccessExpr::staticOwner); тип — в lastType_.
+    void checkStaticFieldAccess(FieldAccessExpr& e, const std::string& moldName);
+    // Mold.метод(...) — вызов static-метода; callee размечается staticOwner'ом.
+    TypeNode checkStaticMethodCall(const std::string& moldName, FieldAccessExpr& callee, CallExpr& call);
+
     void error(int line, int col, const std::string& message);
     TypeNode checkExpr(Expr& e);
     TypeNode checkExprAgainstExpected(Expr& e, const TypeNode& expected);

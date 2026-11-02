@@ -99,6 +99,13 @@ namespace Glass.Studio.Models
     /// <summary>Локальные переменные одного фрейма вызова (Depth 0 — текущий, самый глубокий).</summary>
     public sealed record FrameLocals(int Depth, string Function, int Line, IReadOnlyList<LocalVariable> Locals);
 
+    /// <summary>static-поле: одно на весь mold (а не на кадр или объект) и живёт всю работу программы.</summary>
+    public sealed record StaticVariable(string ClassName, string Name, GlassValue Value)
+    {
+        /// <summary>«Mold.поле» — так к нему обращаются в программе.</summary>
+        public string QualifiedName => ClassName + "." + Name;
+    }
+
     /// <summary>Объект или массив кучи. Members — поля объекта либо элементы массива ("[0]", "[1]", ...).</summary>
     public sealed record HeapObject(
         string Address, bool IsArray, string ClassName, bool Reachable, IReadOnlyList<LocalVariable> Members);

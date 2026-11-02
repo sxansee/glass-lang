@@ -2,6 +2,7 @@
 
 #include "../ast/Type.h"
 #include "../bytecode/Builtins.h"
+#include "../util/Plural.h"
 
 namespace glass {
 
@@ -19,14 +20,7 @@ bool isConvertible(const TypeNode& t) {
 }
 
 // 1 аргумент, 2 аргумента, 5 аргументов
-std::string argWord(size_t n) {
-    size_t last2 = n % 100, last = n % 10;
-    const char* word = (last2 >= 11 && last2 <= 14) ? "аргументов"
-                     : last == 1                      ? "аргумент"
-                     : (last >= 2 && last <= 4)       ? "аргумента"
-                                                      : "аргументов";
-    return std::to_string(n) + " " + word;
-}
+std::string argWord(size_t n) { return countWithWord(n, "аргумент", "аргумента", "аргументов"); }
 
 // ---------------------------------------------------------------------
 // «Все пути возвращают значение»
@@ -433,7 +427,12 @@ TypeNode BodyChecker::checkMethodCallOnMold(const std::string& moldName, const s
         for (auto& a : call.args) checkExpr(*a);
         return errorType();
     }
-    checkMemberAccess(m->access, owner, methodName, MemberKind::Method, call.line, call.column);
+    if (m->modifier == MethodModifier::Static) {
+        error(call.line, call.column,
+              "метод '" + methodName + "' объявлен static: вызывать его нужно через имя mold'а — " + owner + "." + methodName + "(...)");
+    } else {
+        checkMemberAccess(m->access, owner, methodName, MemberKind::Method, call.line, call.column);
+    }
     checkArgsAgainstParams(m->params, call);
     return m->returnType ? *m->returnType : voidType();
 }
@@ -480,6 +479,14 @@ TypeNode BodyChecker::checkBuiltinFunction(CallExpr& e, const BuiltinDef& def) {
             TypeNode t = checkExpr(*e.args[0]);
             if (isVoidT(t)) {
                 error(e.args[0]->line, e.args[0]->column, "нельзя преобразовать в строку значение типа void");
+            }
+            return stringType();
+        }
+        case Builtin::Hex: {
+            if (!checkArgCount(e, name, 1, 1)) return stringType();
+            TypeNode t = checkExpr(*e.args[0]);
+            if (!isErrT(t) && !isIntT(t)) {
+                error(e.args[0]->line, e.args[0]->column, "hex() ожидает целое число (int), получено '" + typeToString(t) + "'");
             }
             return stringType();
         }
@@ -693,12 +700,23 @@ void BodyChecker::visit(ThisExpr& e) {
         lastType_ = errorType();
         return;
     }
+    if (inStaticContext_) {
+        error(e.line, e.column, "в static-коде нет 'this': static-член принадлежит mold'у, а не объекту");
+        lastType_ = errorType();
+        return;
+    }
     lastType_ = named(currentMoldName_);
 }
 
 void BodyChecker::visit(SuperExpr& e) {
     if (currentMoldName_.empty()) {
         error(e.line, e.column, "'super' используется вне метода/конструктора mold'а");
+        lastType_ = errorType();
+        return;
+    }
+    if (inStaticContext_) {
+        error(e.line, e.column, "в static-коде нет 'super': static-член принадлежит mold'у, а не объекту");
+        for (auto& a : e.args) checkExpr(*a);
         lastType_ = errorType();
         return;
     }
@@ -746,7 +764,13 @@ void BodyChecker::visit(SuperExpr& e) {
             lastType_ = errorType();
             return;
         }
-        checkMemberAccess(m->access, owner, e.methodName, MemberKind::Method, e.line, e.column);
+        if (m->modifier == MethodModifier::Static) {
+            error(e.line, e.column,
+                  "метод '" + e.methodName + "' объявлен static: вызывать его нужно через имя mold'а — " + owner + "." +
+                      e.methodName + "(...)");
+        } else {
+            checkMemberAccess(m->access, owner, e.methodName, MemberKind::Method, e.line, e.column);
+        }
         if (e.args.size() != m->params.size()) {
             error(e.line, e.column,
                   "неверное число аргументов: ожидалось " + std::to_string(m->params.size()) + ", передано " +
@@ -771,12 +795,25 @@ void BodyChecker::visit(IdentifierExpr& e) {
         if (const FieldDecl* f = findField(currentMoldName_, e.name, &owner)) {
             // private-поле предка по простому имени из потомка тоже недоступно.
             checkMemberAccess(f->access, owner, e.name, MemberKind::Field, e.line, e.column);
+            if (f->isStatic) {
+                e.staticOwner = owner;   // компилятор возьмёт значение из статической области, а не из объекта
+            } else if (inStaticContext_) {
+                error(e.line, e.column,
+                      "поле '" + e.name + "' принадлежит объекту, а в static-коде объекта нет: обратитесь к нему через переменную с объектом");
+            }
             lastType_ = f->type;
             return;
         }
     }
     if (e.name == "PI" || e.name == "E") {   // встроенные константы (двойной точности)
         lastType_ = doubleType();
+        return;
+    }
+    if (sema_.isKnownMold(e.name)) {
+        error(e.line, e.column,
+              "'" + e.name + "' — имя mold'а, а не значение: объект создаётся вызовом " + e.name + "(...), static-член — " +
+                  e.name + ".имя");
+        lastType_ = errorType();
         return;
     }
     error(e.line, e.column, "неизвестный идентификатор '" + e.name + "'");
@@ -953,6 +990,13 @@ void BodyChecker::visit(BinaryExpr& e) {
 
 void BodyChecker::visit(AssignExpr& e) {
     TypeNode targetType = checkExpr(*e.target);
+    // s[i] = ... — строки неизменяемы. Без этой проверки программа падала бы при выполнении с невнятным сообщением.
+    if (auto* element = dynamic_cast<IndexExpr*>(e.target.get())) {
+        if (isStringT(element->target->resolvedType)) {
+            error(e.line, e.column,
+                  "строки неизменяемы: присвоить элементу строки нельзя; соберите новую строку, например s = s[:i] + \"x\" + s[i + 1:]");
+        }
+    }
     TypeNode valueType = e.op == AssignOp::Assign ? checkExprAgainstExpected(*e.value, targetType) : checkExpr(*e.value);
     if (e.op != AssignOp::Assign) {
         bool numericOk = isNumeric(targetType) && isNumeric(valueType) && isAssignable(valueType, targetType);
@@ -1019,7 +1063,30 @@ void BodyChecker::visit(CallExpr& e) {
         // static-методы не трогаем: у них нет this, а их вызов пока не поддерживается (TODO.md).
         if (!currentMoldName_.empty()) {
             const MethodDecl* method = findMethod(currentMoldName_, name);
-            if (method && method->modifier != MethodModifier::Static) {
+            if (method && method->modifier == MethodModifier::Static) {
+                // static-метод по простому имени — то же, что Mold.метод(...) для текущего mold'а.
+                auto typeName = std::make_unique<IdentifierExpr>();
+                typeName->name = currentMoldName_;
+                typeName->isTypeName = true;
+                typeName->line = idExpr->line;
+                typeName->column = idExpr->column;
+                auto call = std::make_unique<FieldAccessExpr>();
+                call->line = idExpr->line;
+                call->column = idExpr->column;
+                call->target = std::move(typeName);
+                call->name = name;          // копия: name ссылается на idExpr, который исчезнет со следующей строкой
+                e.callee = std::move(call);
+                visit(e);
+                return;
+            }
+            if (method && inStaticContext_) {
+                error(e.line, e.column,
+                      "метод '" + name + "' принадлежит объекту, а в static-коде объекта нет: вызовите его у объекта (объект." + name + "(...))");
+                for (auto& a : e.args) checkExpr(*a);
+                lastType_ = method->returnType ? *method->returnType : voidType();
+                return;
+            }
+            if (method) {
                 auto self = std::make_unique<ThisExpr>();
                 self->line = idExpr->line;
                 self->column = idExpr->column;
@@ -1040,6 +1107,11 @@ void BodyChecker::visit(CallExpr& e) {
     }
 
     if (auto* fieldExpr = dynamic_cast<FieldAccessExpr*>(e.callee.get())) {
+        // Mold.метод(...) — вызов static-метода: слева имя типа, значения нет.
+        if (std::string moldName = moldNameOf(*fieldExpr->target); !moldName.empty()) {
+            lastType_ = checkStaticMethodCall(moldName, *fieldExpr, e);
+            return;
+        }
         TypeNode targetType = checkExpr(*fieldExpr->target);
         if (isArrayT(targetType)) {
             lastType_ = checkArrayMethod(e, *fieldExpr, targetType);
@@ -1072,6 +1144,11 @@ void BodyChecker::visit(CallExpr& e) {
 }
 
 void BodyChecker::visit(FieldAccessExpr& e) {
+    // Mold.поле — static-поле: слева имя типа, значения нет.
+    if (std::string moldName = moldNameOf(*e.target); !moldName.empty()) {
+        checkStaticFieldAccess(e, moldName);
+        return;
+    }
     TypeNode targetType = checkExpr(*e.target);
     if (isArrayT(targetType) || isStringT(targetType)) {
         if (e.name == "length") {
@@ -1086,7 +1163,12 @@ void BodyChecker::visit(FieldAccessExpr& e) {
     if (targetType.kind == TypeNode::Kind::Named && sema_.isKnownMold(targetType.name)) {
         std::string owner;
         if (const FieldDecl* f = findField(targetType.name, e.name, &owner)) {
-            checkMemberAccess(f->access, owner, e.name, MemberKind::Field, e.line, e.column);
+            if (f->isStatic) {
+                error(e.line, e.column,
+                      "поле '" + e.name + "' объявлено static: обращаться к нему нужно через имя mold'а — " + owner + "." + e.name);
+            } else {
+                checkMemberAccess(f->access, owner, e.name, MemberKind::Field, e.line, e.column);
+            }
             lastType_ = f->type;
             return;
         }
@@ -1288,6 +1370,66 @@ void BodyChecker::checkAllPathsReturn(const std::string& what, const std::option
 }
 
 // ---------------------------------------------------------------------
+// static-члены: Mold.поле и Mold.метод(...)
+// ---------------------------------------------------------------------
+
+std::string BodyChecker::moldNameOf(const Expr& e) const {
+    auto* id = dynamic_cast<const IdentifierExpr*>(&e);
+    if (!id) return "";
+    if (id->isTypeName) return id->name;   // уже размечено (подмена вызова static-метода по простому имени)
+    if (lookupVar(id->name)) return "";    // локальная переменная или параметр перекрывает имя mold'а
+    if (!currentMoldName_.empty() && findField(currentMoldName_, id->name)) return "";
+    return sema_.isKnownMold(id->name) ? id->name : "";
+}
+
+void BodyChecker::checkStaticFieldAccess(FieldAccessExpr& e, const std::string& moldName) {
+    auto* typeName = static_cast<IdentifierExpr*>(e.target.get());   // moldNameOf гарантирует IdentifierExpr
+    typeName->isTypeName = true;
+    typeName->resolvedType = named(moldName);
+    std::string owner;
+    const FieldDecl* f = findField(moldName, e.name, &owner);
+    if (!f) {
+        error(e.line, e.column, "у mold '" + moldName + "' нет static-поля '" + e.name + "'");
+        lastType_ = errorType();
+        return;
+    }
+    if (!f->isStatic) {
+        error(e.line, e.column,
+              "поле '" + e.name + "' принадлежит объекту, а не mold'у: обращаться к нему нужно через объект, а не через имя '" +
+                  moldName + "'");
+        lastType_ = f->type;
+        return;
+    }
+    checkMemberAccess(f->access, owner, e.name, MemberKind::Field, e.line, e.column);
+    e.staticOwner = owner;
+    lastType_ = f->type;
+}
+
+TypeNode BodyChecker::checkStaticMethodCall(const std::string& moldName, FieldAccessExpr& callee, CallExpr& call) {
+    auto* typeName = static_cast<IdentifierExpr*>(callee.target.get());
+    typeName->isTypeName = true;
+    typeName->resolvedType = named(moldName);
+    std::string owner;
+    const MethodDecl* m = findMethod(moldName, callee.name, &owner);
+    if (!m) {
+        error(call.line, call.column, "у mold '" + moldName + "' нет static-метода '" + callee.name + "'");
+        for (auto& a : call.args) checkExpr(*a);
+        return errorType();
+    }
+    if (m->modifier != MethodModifier::Static) {
+        error(call.line, call.column,
+              "метод '" + callee.name + "' принадлежит объекту, а не mold'у: вызывать его нужно у объекта (объект." + callee.name +
+                  "(...)), а не через имя '" + moldName + "'");
+        for (auto& a : call.args) checkExpr(*a);
+        return m->returnType ? *m->returnType : voidType();
+    }
+    checkMemberAccess(m->access, owner, callee.name, MemberKind::Method, call.line, call.column);
+    callee.staticOwner = owner;
+    checkArgsAgainstParams(m->params, call);
+    return m->returnType ? *m->returnType : voidType();
+}
+
+// ---------------------------------------------------------------------
 // Точка входа: обход всех деклараций
 // ---------------------------------------------------------------------
 
@@ -1299,16 +1441,23 @@ std::vector<std::string> BodyChecker::checkProgram(Program& program) {
             for (auto& member : mold->members) {
                 if (auto* field = std::get_if<FieldDecl>(&member)) {
                     if (field->initExpr) {
-                        currentMoldName_.clear();
+                        // Инициализатор поля объекта не видит ни this, ни других полей (mold не выставляем).
+                        // Инициализатор static-поля — код самого mold'а, но без объекта: ему доступны
+                        // static-члены, конструкторы и private-члены своего mold'а.
+                        currentMoldName_ = field->isStatic ? mold->name : std::string();
+                        inStaticContext_ = field->isStatic;
                         currentGenericScope_ = mold->genericParams;
                         currentReturnType_.reset();
                         scopeStack_.clear();
                         pushScope();
                         checkExprAgainstExpected(*field->initExpr, field->type);
                         popScope();
+                        inStaticContext_ = false;
+                        currentMoldName_.clear();
                     }
                 } else if (auto* method = std::get_if<MethodDecl>(&member)) {
                     currentMoldName_ = mold->name;
+                    inStaticContext_ = method->modifier == MethodModifier::Static;
                     currentGenericScope_ = mold->genericParams;
                     for (auto& g : method->genericParams) currentGenericScope_.push_back(g);
                     currentReturnType_ = method->returnType;
@@ -1317,6 +1466,7 @@ std::vector<std::string> BodyChecker::checkProgram(Program& program) {
                     for (auto& p : method->params) defineVar(p.name, p.type, p.line, p.column);
                     checkStmt(*method->body);
                     popScope();
+                    inStaticContext_ = false;
                     checkAllPathsReturn("метода '" + method->name + "' mold'а '" + mold->name + "'", method->returnType,
                                         *method->body, method->line, method->column);
                 } else if (auto* ctor = std::get_if<ConstructorDecl>(&member)) {

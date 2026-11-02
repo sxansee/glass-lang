@@ -131,6 +131,15 @@ private:
                                 const std::vector<std::string>& paramTypeStrs, const std::string& returnTypeStr) const;
     int findStaticMethodFunctionIndex(const std::string& startMold, const std::string& methodName) const;
 
+    // --- static-поля (общие для всего mold'а, живут в статической области VM) ---
+    // «Mold.поле» → индекс в CompiledProgram::statics. Заполняется до компиляции тел.
+    std::unordered_map<std::string, int> staticIndexByKey_;
+    void registerStatics(Program& program);
+    int staticIndexOf(const std::string& owner, const std::string& fieldName) const;
+    // Синтетическая функция: вычисляет инициализаторы static-полей (база раньше потомка, внутри mold'а — в
+    // порядке объявления). VM выполняет её один раз до main() — см. CompiledProgram::staticInitFunctionIndex.
+    void compileStaticInitFunction(Program& program);
+
     void compileFieldInitFunction(const std::string& moldName);
     void compileMethodBody(const std::string& moldName, MethodDecl& method);
     void compileConstructorBody(const std::string& moldName, ConstructorDecl& ctor);

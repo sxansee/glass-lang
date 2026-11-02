@@ -142,6 +142,80 @@ const char* kToStringProgram =
     "    print(\"конец\")\n"             // 9
     "}\n";                               // 10
 
+void test_step_into_construction_does_not_enter_implicit_initialization() {
+    // Mold без инициализаторов полей: в служебную $fieldinit stepInto не заходит — это не код студента.
+    std::string src =
+        "mold P {\n"                    // 1
+        "    let x: int;\n"             // 2
+        "}\n"                           // 3
+        "fn main() {\n"                 // 4
+        "    let p = P();\n"            // 5
+        "    print(1);\n"               // 6
+        "}\n";
+    std::string err;
+    auto vm = compileForDebug(src, &err);
+    CHECK(vm != nullptr);
+    if (!vm) return;
+    vm->setBreakpoint(5);
+    vm->runUntilPause();
+    CHECK_EQ(vm->currentLine(), 5);
+    vm->stepInto();
+    CHECK_EQ(vm->currentLine(), 6);                    // сразу следующая строка main
+    CHECK_EQ(vm->callStack().size(), static_cast<size_t>(1));
+}
+
+void test_step_into_construction_of_derived_mold_without_initializers_steps_over() {
+    // Цепочка предков тоже не «заходится»: вызов инициализации предка — служебный код.
+    std::string src =
+        "mold A {\n"                    // 1
+        "    let a: int;\n"             // 2
+        "}\n"                           // 3
+        "mold B : A {\n"                // 4
+        "    let b: int;\n"             // 5
+        "}\n"                           // 6
+        "fn main() {\n"                 // 7
+        "    let v = B();\n"            // 8
+        "    print(1);\n"               // 9
+        "}\n";
+    std::string err;
+    auto vm = compileForDebug(src, &err);
+    CHECK(vm != nullptr);
+    if (!vm) return;
+    vm->setBreakpoint(8);
+    vm->runUntilPause();
+    vm->stepInto();
+    CHECK_EQ(vm->currentLine(), 9);
+    CHECK_EQ(vm->callStack().size(), static_cast<size_t>(1));
+}
+
+void test_step_into_construction_enters_field_initializer() {
+    // А инициализатор поля — код студента: в него заходить можно (и в вызываемую им функцию тоже).
+    std::string src =
+        "fn five() -> int {\n"          // 1
+        "    return 5;\n"               // 2
+        "}\n"                           // 3
+        "mold P {\n"                    // 4
+        "    let x: int = five();\n"    // 5
+        "}\n"                           // 6
+        "fn main() {\n"                 // 7
+        "    let p = P();\n"            // 8
+        "    print(1);\n"               // 9
+        "}\n";
+    std::string err;
+    auto vm = compileForDebug(src, &err);
+    CHECK(vm != nullptr);
+    if (!vm) return;
+    vm->setBreakpoint(8);
+    vm->runUntilPause();
+    CHECK_EQ(vm->currentLine(), 8);
+    vm->stepInto();
+    CHECK_EQ(vm->currentLine(), 5);                    // строка инициализатора поля
+    CHECK_EQ(vm->callStack().size(), static_cast<size_t>(2));
+    vm->stepInto();
+    CHECK_EQ(vm->currentLine(), 2);                    // внутрь five()
+    CHECK_EQ(vm->callStack().size(), static_cast<size_t>(3));
+}
+
 void test_step_into_enters_tostring_from_print() {
     std::string err;
     auto vm = compileForDebug(kToStringProgram, &err);
@@ -149,7 +223,7 @@ void test_step_into_enters_tostring_from_print() {
     if (!vm) return;
     vm->stepInto();  // line 7
     CHECK(vm->currentLine() == 7);
-    vm->stepOver();  // line 8: print(p) (мимо неявного конструктора P(), в который stepInto зашёл бы)
+    vm->stepOver();  // line 8: print(p)
     CHECK(vm->currentLine() == 8);
     vm->stepInto();  // внутрь toString()
     CHECK(vm->currentLine() == 3);
@@ -162,7 +236,7 @@ void test_step_over_print_runs_tostring_without_stopping_inside() {
     CHECK(vm != nullptr);
     if (!vm) return;
     vm->stepInto();  // line 7
-    vm->stepOver();  // line 8 (мимо неявного конструктора P())
+    vm->stepOver();  // line 8
     auto status = vm->stepOver();  // print(p) вместе с toString() — одним шагом
     CHECK(status == VM::RunStatus::PausedAfterStep);
     CHECK(vm->currentLine() == 9);
@@ -318,6 +392,121 @@ void test_heap_objects_reports_live_object_fields() {
     CHECK(found);
 }
 
+// --- static-поля ---
+
+void test_static_vars_report_values_in_declaration_order() {
+    std::string src =
+        "mold A {\n"                          // 1
+        "    static let n: int = 5;\n"        // 2
+        "    static let d: double;\n"         // 3
+        "    static let flag: bool;\n"        // 4
+        "}\n"                                 // 5
+        "mold B : A {\n"                      // 6
+        "    static let s: string = \"x\";\n" // 7
+        "}\n"                                 // 8
+        "fn main() {\n"                       // 9
+        "    A.n = 6;\n"                      // 10
+        "    print(A.n);\n"                   // 11
+        "}\n";
+    std::string err;
+    auto vm = compileForDebug(src, &err);
+    CHECK(vm != nullptr);
+    if (!vm) return;
+    vm->setBreakpoint(11);
+    vm->runUntilPause();
+    auto vars = vm->staticVars();
+    CHECK_EQ(vars.size(), static_cast<size_t>(4));
+    if (vars.size() == 4) {
+        CHECK_EQ(vars[0].className + "." + vars[0].name, std::string("A.n"));
+        CHECK_EQ(vars[1].className + "." + vars[1].name, std::string("A.d"));
+        CHECK_EQ(vars[2].className + "." + vars[2].name, std::string("A.flag"));
+        CHECK_EQ(vars[3].className + "." + vars[3].name, std::string("B.s"));
+        CHECK(isInt(vars[0].value) && std::get<long long>(vars[0].value) == 6);   // изменено в main
+        CHECK(isDouble(vars[1].value) && std::get<double>(vars[1].value) == 0.0);  // значение по умолчанию
+        CHECK(isBool(vars[2].value) && !std::get<bool>(vars[2].value));
+    }
+}
+
+void test_object_held_only_by_static_field_is_reachable() {
+    std::string src =
+        "mold Box {\n"                              // 1
+        "    let v: int\n"                          // 2
+        "    Box(x: int) { v = x; }\n"              // 3
+        "}\n"                                       // 4
+        "mold Registry {\n"                         // 5
+        "    static let item: Box = Box(7);\n"      // 6
+        "}\n"                                       // 7
+        "fn main() {\n"                             // 8
+        "    print(1);\n"                           // 9
+        "}\n";
+    std::string err;
+    auto vm = compileForDebug(src, &err);
+    CHECK(vm != nullptr);
+    if (!vm) return;
+    vm->setBreakpoint(9);
+    vm->runUntilPause();
+    bool found = false;
+    for (auto& obj : vm->heapObjects()) {
+        if (obj.isArray || obj.className != "Box") continue;
+        found = obj.reachable;   // единственная ссылка на Box — из static-поля, и это корень
+    }
+    CHECK(found);
+}
+
+void test_breakpoint_inside_static_initializer_and_call_stack() {
+    std::string src =
+        "fn seed() -> int {\n"                      // 1
+        "    return 5;\n"                           // 2  <- точка останова
+        "}\n"                                       // 3
+        "mold A {\n"                                // 4
+        "    static let n: int = seed();\n"         // 5
+        "}\n"                                       // 6
+        "fn main() {\n"                             // 7
+        "    print(A.n);\n"                         // 8
+        "}\n";
+    std::string err;
+    auto vm = compileForDebug(src, &err);
+    CHECK(vm != nullptr);
+    if (!vm) return;
+    vm->setBreakpoint(2);
+    auto status = vm->runUntilPause();
+    CHECK(status == VM::RunStatus::PausedAtBreakpoint);
+    CHECK_EQ(vm->currentLine(), 2);
+    auto stack = vm->callStack();
+    // seed вызвана из инициализатора static-полей, а тот выполняется «поверх» main.
+    CHECK_EQ(stack.size(), static_cast<size_t>(3));
+    if (stack.size() == 3) {
+        CHECK_EQ(stack[0].functionName, std::string("seed"));
+        CHECK_EQ(stack[2].functionName, std::string("main"));
+    }
+    vm->clearAllBreakpoints();
+    CHECK(vm->runUntilPause() == VM::RunStatus::Finished);
+    CHECK(vm->errors().empty());
+    CHECK_EQ(vm->printedLines().size(), static_cast<size_t>(1));
+    if (vm->printedLines().size() == 1) CHECK_EQ(vm->printedLines()[0], std::string("5"));
+}
+
+void test_static_initializer_error_happens_before_main() {
+    std::string src =
+        "fn boom() -> int { throw Exception(\"не вышло\"); }\n"
+        "mold A {\n"
+        "    static let n: int = boom();\n"
+        "}\n"
+        "fn main() {\n"
+        "    print(\"main не должен выполниться\");\n"
+        "}\n";
+    std::string err;
+    auto vm = compileForDebug(src, &err);
+    CHECK(vm != nullptr);
+    if (!vm) return;
+    vm->run();
+    CHECK(vm->printedLines().empty());   // main не успел напечатать ни строки
+    CHECK_EQ(vm->errors().size(), static_cast<size_t>(1));
+    if (vm->errors().size() == 1) {
+        CHECK(vm->errors()[0].find("необработанное исключение (Exception): не вышло") != std::string::npos);
+    }
+}
+
 } // namespace
 
 int main() {
@@ -327,6 +516,9 @@ int main() {
 
     test_step_into_advances_one_line_and_enters_calls();
     test_step_over_does_not_stop_inside_called_function();
+    test_step_into_construction_does_not_enter_implicit_initialization();
+    test_step_into_construction_of_derived_mold_without_initializers_steps_over();
+    test_step_into_construction_enters_field_initializer();
     test_step_into_enters_tostring_from_print();
     test_step_over_print_runs_tostring_without_stopping_inside();
     test_step_out_returns_to_caller();
@@ -336,6 +528,11 @@ int main() {
     test_call_stack_shows_nested_function_names();
 
     test_heap_objects_reports_live_object_fields();
+
+    test_static_vars_report_values_in_declaration_order();
+    test_object_held_only_by_static_field_is_reachable();
+    test_breakpoint_inside_static_initializer_and_call_stack();
+    test_static_initializer_error_happens_before_main();
 
     testkit::reportSummary();
     return testkit::g_testsFailed == 0 ? 0 : 1;

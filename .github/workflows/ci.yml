@@ -28,6 +28,9 @@ jobs:
       - name: Сборка и все тесты (scripts/test-all.sh)
         run: bash scripts/test-all.sh
 
+      - name: Вывод примеров glass error в документации актуален (scripts/update-docs.py)
+        run: python3 scripts/update-docs.py --check
+
   windows:
     name: Windows (MSVC) — C++ и .NET тесты, сборка WPF
     runs-on: windows-latest

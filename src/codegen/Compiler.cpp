@@ -1,7 +1,9 @@
 #include "../bytecode/Builtins.h"
 #include "Compiler.h"
 
+#include <functional>
 #include <stdexcept>
+#include <unordered_set>
 
 #include "../ast/Type.h"
 
@@ -172,6 +174,7 @@ const ClassInfo& Compiler::buildClassInfo(const std::string& moldName) {
 
     for (auto& member : moldDecl->members) {
         if (auto* field = std::get_if<FieldDecl>(&member)) {
+            if (field->isStatic) continue;  // static-поле лежит в статической области VM, а не в объекте (и не в ~layout)
             FieldSlot slot;
             slot.name = field->name;
             slot.offset = static_cast<int>(info.fields.size());
@@ -218,6 +221,7 @@ CompiledProgram Compiler::compileProgram(Program& program) {
     result_ = CompiledProgram{};
 
     registerFunctionSlots(program);
+    registerStatics(program);
 
     for (auto& decl : program.declarations) {
         if (auto* mold = std::get_if<MoldDecl>(&decl)) {
@@ -240,7 +244,81 @@ CompiledProgram Compiler::compileProgram(Program& program) {
         }
     }
 
+    compileStaticInitFunction(program);
     return result_;
+}
+
+void Compiler::registerStatics(Program& program) {
+    bool anyInitializer = false;
+    for (auto& decl : program.declarations) {
+        auto* mold = std::get_if<MoldDecl>(&decl);
+        if (!mold) continue;
+        for (auto& member : mold->members) {
+            auto* field = std::get_if<FieldDecl>(&member);
+            if (!field || !field->isStatic) continue;
+            StaticSlot slot;
+            slot.className = mold->name;
+            slot.name = field->name;
+            slot.kind = fieldKindOf(field->type);
+            staticIndexByKey_[mold->name + "." + field->name] = static_cast<int>(result_.statics.size());
+            result_.statics.push_back(std::move(slot));
+            if (field->initExpr) anyInitializer = true;
+        }
+    }
+    // Слот под синтетическую функцию — здесь, до компиляции тел: allocateFunctionSlot() меняет вектор functions.
+    if (anyInitializer) result_.staticInitFunctionIndex = allocateFunctionSlot();
+}
+
+int Compiler::staticIndexOf(const std::string& owner, const std::string& fieldName) const {
+    auto it = staticIndexByKey_.find(owner + "." + fieldName);
+    if (it == staticIndexByKey_.end()) {
+        throw std::runtime_error("codegen: внутренняя ошибка — static-поле '" + owner + "." + fieldName + "' не зарегистрировано");
+    }
+    return it->second;
+}
+
+void Compiler::compileStaticInitFunction(Program& program) {
+    if (result_.staticInitFunctionIndex < 0) return;
+    CompiledFunction& fn = result_.functions[static_cast<size_t>(result_.staticInitFunctionIndex)];
+    fn.name = "$static-init";
+    fn.paramCount = 0;
+
+    currentFn_ = &fn;
+    scopes_.clear();
+    nextSlot_ = 0;
+    loopStack_.clear();
+    pushScope();
+
+    int lastLine = 1;
+    std::unordered_set<std::string> done;
+    // База раньше потомка: инициализатор потомка вправе читать static-поля предка.
+    std::function<void(const std::string&)> emitFor = [&](const std::string& moldName) {
+        if (!done.insert(moldName).second) return;
+        auto chain = sema_.getMoldChain(moldName);
+        if (chain.size() > 1) emitFor(chain[1]);
+        const MoldDecl* decl = sema_.getMold(moldName);
+        if (!decl) return;
+        currentMoldName_ = moldName;
+        for (auto& member : decl->members) {
+            auto* field = std::get_if<FieldDecl>(&member);
+            if (!field || !field->isStatic || !field->initExpr) continue;
+            compileExpr(*field->initExpr);
+            emit(OpCode::StoreStatic, staticIndexOf(moldName, field->name), field->line);
+            emit(OpCode::Pop, 0, field->line);  // StoreStatic оставляет значение (присваивание — выражение)
+            lastLine = field->line;
+        }
+    };
+    for (auto& decl : program.declarations) {
+        if (auto* mold = std::get_if<MoldDecl>(&decl)) emitFor(mold->name);
+    }
+    currentMoldName_.clear();
+
+    emit(OpCode::PushConst, addConstant(Value(std::monostate{})), lastLine);
+    emit(OpCode::Return, 0, lastLine);
+
+    popScope();
+    fn.localCount = nextSlot_;
+    currentFn_ = nullptr;
 }
 
 void Compiler::compileTopLevelFunction(FunctionDecl& fn) {
@@ -280,16 +358,20 @@ void Compiler::compileFieldInitFunction(const std::string& moldName) {
     pushScope();
     declareLocal("this");  // слот 0
 
+    // Служебные инструкции (вызов инициализации предка, возврат) — не код студента: строка 0, как у prelude. Отладчик
+    // в них не останавливается и не показывает кадр, поэтому stepInto на Mold() не «заходит в пустой конструктор».
+    // Инициализаторы полей ниже — настоящий код пользователя, их строки остаются: в них заходить можно и нужно.
     auto chain = sema_.getMoldChain(moldName);
     if (chain.size() > 1) {
         const ClassInfo& baseInfo = buildClassInfo(chain[1]);
-        emit(OpCode::LoadLocal, 0, moldDecl->line);
-        emit(OpCode::Call, baseInfo.fieldInitFunctionIndex, moldDecl->line);
-        emit(OpCode::Pop, 0, moldDecl->line);
+        emit(OpCode::LoadLocal, 0, 0);
+        emit(OpCode::Call, baseInfo.fieldInitFunctionIndex, 0);
+        emit(OpCode::Pop, 0, 0);
     }
 
     for (auto& member : moldDecl->members) {
         if (auto* field = std::get_if<FieldDecl>(&member)) {
+            if (field->isStatic) continue;  // static-поля инициализирует функция $static-init, а не создание объекта
             if (field->initExpr) {
                 const FieldSlot* slot = info.findField(field->name);
                 emit(OpCode::LoadLocal, 0, field->line);
@@ -300,8 +382,8 @@ void Compiler::compileFieldInitFunction(const std::string& moldName) {
         }
     }
 
-    emit(OpCode::PushConst, addConstant(Value(std::monostate{})), moldDecl->line);
-    emit(OpCode::Return, 0, moldDecl->line);
+    emit(OpCode::PushConst, addConstant(Value(std::monostate{})), 0);
+    emit(OpCode::Return, 0, 0);
 
     popScope();
     fn.localCount = nextSlot_;
@@ -312,7 +394,9 @@ void Compiler::compileMethodBody(const std::string& moldName, MethodDecl& method
     int fnIdx = moldFunctionIndices_.at(moldName).methodIndices.at(method.name);
     CompiledFunction& fn = result_.functions[static_cast<size_t>(fnIdx)];
     fn.name = moldName + "." + method.name;
-    fn.paramCount = 1 + static_cast<int>(method.params.size());
+    // static-метод без this: параметры идут с нулевого слота; вызывается как обычная функция (OpCode::Call без получателя).
+    const bool isStatic = method.modifier == MethodModifier::Static;
+    fn.paramCount = (isStatic ? 0 : 1) + static_cast<int>(method.params.size());
 
     currentFn_ = &fn;
     currentMoldName_ = moldName;
@@ -320,7 +404,7 @@ void Compiler::compileMethodBody(const std::string& moldName, MethodDecl& method
     nextSlot_ = 0;
     loopStack_.clear();
     pushScope();
-    declareLocal("this");
+    if (!isStatic) declareLocal("this");
     for (auto& p : method.params) declareLocal(p.name);
 
     compileStmt(*method.body);
@@ -396,6 +480,12 @@ bool isStringTypeNode(const TypeNode& t) { return t.kind == TypeNode::Kind::Prim
 }  // namespace
 
 void Compiler::emitMethodCall(FieldAccessExpr& fieldExpr, CallExpr& call) {
+    if (!fieldExpr.staticOwner.empty()) {
+        // Mold.метод(...) — static-метод: получателя нет, это обычный вызов функции по индексу.
+        for (auto& a : call.args) compileExpr(*a);
+        emit(OpCode::Call, moldFunctionIndices_.at(fieldExpr.staticOwner).methodIndices.at(fieldExpr.name), call.line);
+        return;
+    }
     const TypeNode& receiverType = fieldExpr.target->resolvedType;
     const bool receiverIsArray = receiverType.kind == TypeNode::Kind::Array;
     const bool receiverIsString = receiverType.kind == TypeNode::Kind::Primitive && receiverType.name == "string";
@@ -491,6 +581,10 @@ void Compiler::visit(IdentifierExpr& e) {
     auto slot = resolveLocal(e.name);
     if (slot) {
         emit(OpCode::LoadLocal, *slot, e.line);
+        return;
+    }
+    if (!e.staticOwner.empty()) {
+        emit(OpCode::LoadStatic, staticIndexOf(e.staticOwner, e.name), e.line);
         return;
     }
     if (!currentMoldName_.empty()) {
@@ -597,6 +691,34 @@ void Compiler::visit(AssignExpr& e) {
         compileExpr(*e.value);
         if (textAppend) emitObjToStringIfObject(e.value->resolvedType, e.line);
     };
+    // Присваивание static-полю (Mold.поле = ..., поле = ... внутри mold'а): объекта нет, значение — на стеке.
+    auto emitStaticAssign = [&](const std::string& owner, const std::string& name) {
+        const int index = staticIndexOf(owner, name);
+        if (e.op == AssignOp::Assign) {
+            compileExpr(*e.value);
+        } else {
+            emit(OpCode::LoadStatic, index, e.line);
+            compileCompoundRhs();
+            switch (e.op) {
+                case AssignOp::AddAssign: emit(OpCode::Add, 0, e.line); break;
+                case AssignOp::SubAssign: emit(OpCode::Sub, 0, e.line); break;
+                case AssignOp::MulAssign: emit(OpCode::Mul, 0, e.line); break;
+                case AssignOp::DivAssign: emit(OpCode::Div, 0, e.line); break;
+                case AssignOp::Assign: break;
+            }
+        }
+        emit(OpCode::StoreStatic, index, e.line);  // снимает значение и кладёт обратно (присваивание — выражение)
+    };
+    if (auto* staticField = dynamic_cast<FieldAccessExpr*>(e.target.get()); staticField && !staticField->staticOwner.empty()) {
+        emitStaticAssign(staticField->staticOwner, staticField->name);
+        return;
+    }
+    if (auto* staticName = dynamic_cast<IdentifierExpr*>(e.target.get());
+        staticName && !staticName->staticOwner.empty() && !resolveLocal(staticName->name)) {
+        emitStaticAssign(staticName->staticOwner, staticName->name);
+        return;
+    }
+
     if (auto* fieldTarget = dynamic_cast<FieldAccessExpr*>(e.target.get())) {
         compileExpr(*fieldTarget->target);  // стек: [obj]
         const ClassInfo& info = buildClassInfo(fieldTarget->target->resolvedType.name);
@@ -746,6 +868,10 @@ void Compiler::visit(CallExpr& e) {
 }
 
 void Compiler::visit(FieldAccessExpr& e) {
+    if (!e.staticOwner.empty()) {
+        emit(OpCode::LoadStatic, staticIndexOf(e.staticOwner, e.name), e.line);  // Mold.поле: имя типа не вычисляется
+        return;
+    }
     const TypeNode& targetType = e.target->resolvedType;
     if (targetType.kind == TypeNode::Kind::Array || (targetType.kind == TypeNode::Kind::Primitive && targetType.name == "string")) {
         compileExpr(*e.target);              // xs.length / s.length — единственное «поле» массива и строки

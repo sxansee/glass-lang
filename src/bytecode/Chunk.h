@@ -66,6 +66,10 @@ enum class OpCode : uint8_t {
                   // этом порядке на стеке: [..., объект, значение]),
                   // пишет в fields[offset]; кладёт значение обратно
                   // (присваивание — выражение)
+    LoadStatic,   // operand: индекс в CompiledProgram::statics; кладёт значение static-поля (одно на весь mold,
+                  // а не на объект — поэтому объект на стеке не нужен)
+    StoreStatic,  // operand: индекс в statics; снимает значение, пишет его в static-поле и кладёт обратно
+                  // (присваивание — выражение, как StoreField)
 
     NewArray,    // operand: N — снимает N значений с вершины стека (в
                  // порядке элементов литерала: элемент 0 — самый глубокий,
@@ -156,9 +160,21 @@ struct CompiledFunction {
     std::vector<std::string> localNames;
 };
 
+// Одно static-поле mold'а: общее для всех его объектов и живущее всю работу программы. Лежит не в объекте, а в
+// статической области VM (VM::statics_), поэтому в ~layout его нет. kind — для значения по умолчанию.
+struct StaticSlot {
+    std::string className;  // mold, в котором поле объявлено
+    std::string name;
+    FieldKind kind = FieldKind::Reference;
+};
+
 struct CompiledProgram {
     std::vector<CompiledFunction> functions;
     std::unordered_map<std::string, int> functionIndexByName;
+
+    std::vector<StaticSlot> statics;
+    // Функция-инициализатор static-полей (без параметров): VM выполняет её ДО main(). -1 — инициализаторов нет.
+    int staticInitFunctionIndex = -1;
 
     std::vector<ClassInfo> classes;
     std::unordered_map<std::string, int> classIndexByName;

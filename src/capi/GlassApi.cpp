@@ -279,6 +279,25 @@ GLASS_API char* glass_get_locals_json(GlassSession* session, int frame_depth) {
     return allocateCString(localsToJson(session->vm->locals(static_cast<size_t>(frame_depth))));
 }
 
+GLASS_API char* glass_get_statics_json(GlassSession* session) {
+    if (!session || !session->vm) return allocateCString("[]");
+    std::ostringstream oss;
+    oss << "[";
+    auto statics = session->vm->staticVars();
+    for (size_t i = 0; i < statics.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << "{\"class\":";
+        jsonEscapeInto(oss, statics[i].className);
+        oss << ",\"name\":";
+        jsonEscapeInto(oss, statics[i].name);
+        oss << ",\"value\":";
+        valueToJsonInto(oss, statics[i].value);
+        oss << "}";
+    }
+    oss << "]";
+    return allocateCString(oss.str());
+}
+
 GLASS_API char* glass_get_heap_json(GlassSession* session) {
     if (!session || !session->vm) return allocateCString("{\"objects\":[]}");
     std::ostringstream oss;

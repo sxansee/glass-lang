@@ -190,6 +190,10 @@ bool VM::callBuiltin(const Frame& frame, int id, int argc) {
         case Builtin::Str:
             return done(makeString(valueToDisplayString(args[0])));
 
+        case Builtin::Hex:
+            // Типизатор пропускает только int; hex(a~address) совпадает с адресом в print(a): Класс@0x…
+            return done(makeString(formatHex(isInt(args[0]) ? std::get<long long>(args[0]) : 0)));
+
         case Builtin::ToInt: {
             const Value& v = args[0];
             if (isInt(v)) return done(v);

@@ -54,13 +54,15 @@ namespace Glass.Studio.Debugging
     public sealed class DebugSnapshot
     {
         public DebugSnapshot(string output, int currentLine, IReadOnlyList<StackFrameInfo> callStack,
-                             IReadOnlyList<FrameLocals> frames, HeapSnapshot heap)
+                             IReadOnlyList<FrameLocals> frames, HeapSnapshot heap,
+                             IReadOnlyList<StaticVariable>? statics = null)
         {
             Output = output;
             CurrentLine = currentLine;
             CallStack = callStack;
             Frames = frames;
             Heap = heap;
+            Statics = statics ?? Array.Empty<StaticVariable>();
         }
 
         public string Output { get; }
@@ -69,6 +71,8 @@ namespace Glass.Studio.Debugging
         public IReadOnlyList<StackFrameInfo> CallStack { get; }
         public IReadOnlyList<FrameLocals> Frames { get; }
         public HeapSnapshot Heap { get; }
+        /// <summary>static-поля программы: общие для всех кадров, поэтому не входят в Frames.</summary>
+        public IReadOnlyList<StaticVariable> Statics { get; }
     }
 
     public sealed class DebugSession : IDisposable
@@ -183,7 +187,8 @@ namespace Glass.Studio.Debugging
                 frames.Add(new FrameLocals(depth, stack[depth].Function, stack[depth].Line, locals));
             }
             HeapSnapshot heap = GlassJson.ParseHeap(_native.GetHeapJson());
-            return new DebugSnapshot(_native.GetOutput(), _native.CurrentLine, stack, frames, heap);
+            IReadOnlyList<StaticVariable> statics = GlassJson.ParseStatics(_native.GetStaticsJson());
+            return new DebugSnapshot(_native.GetOutput(), _native.CurrentLine, stack, frames, heap, statics);
         }
 
         private async Task<CommandResult> ExecuteAsync(Func<GlassRunStatus> nativeCall)

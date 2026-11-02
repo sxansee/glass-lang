@@ -28,7 +28,25 @@ constexpr size_t kMaxCallDepth = 10000;
 
 }  // namespace
 
-VM::VM(CompiledProgram program) : program_(std::move(program)) {}
+namespace {
+
+// Значение по умолчанию для поля данного вида: 0, 0.0, false или null — для полей объекта и для static-полей.
+Value defaultValueFor(FieldKind kind) {
+    switch (kind) {
+        case FieldKind::Int: return Value(static_cast<long long>(0));
+        case FieldKind::Double: return Value(0.0);
+        case FieldKind::Bool: return Value(false);
+        case FieldKind::Reference: break;
+    }
+    return Value{std::monostate{}};
+}
+
+}  // namespace
+
+VM::VM(CompiledProgram program) : program_(std::move(program)) {
+    statics_.reserve(program_.statics.size());
+    for (const StaticSlot& slot : program_.statics) statics_.push_back(defaultValueFor(slot.kind));
+}
 
 VM::~VM() {
     ObjInstance* cur = allAllocations_;
@@ -68,15 +86,8 @@ void VM::runtimeError(const Frame& frame, const std::string& message) {
 ObjInstance* VM::allocateInstance(const ClassInfo& info) {
     auto* obj = new ObjInstance();
     obj->classInfo = &info;
-    obj->fields.resize(info.fields.size(), Value{std::monostate{}});
-    for (size_t i = 0; i < info.fields.size(); i++) {
-        switch (info.fields[i].kind) {
-            case FieldKind::Int: obj->fields[i] = Value(static_cast<long long>(0)); break;
-            case FieldKind::Double: obj->fields[i] = Value(0.0); break;
-            case FieldKind::Bool: obj->fields[i] = Value(false); break;
-            case FieldKind::Reference: break;  // остаётся null (monostate)
-        }
-    }
+    obj->fields.reserve(info.fields.size());
+    for (const FieldSlot& field : info.fields) obj->fields.push_back(defaultValueFor(field.kind));
     obj->nextAllocated = allAllocations_;
     allAllocations_ = obj;
     liveObjectCount_++;
@@ -130,6 +141,7 @@ void VM::markValue(const Value& root) {
 
 void VM::collectGarbage() {
     for (auto& v : stack_) markValue(v);
+    for (auto& v : statics_) markValue(v);  // static-поля — тоже корни
 
     ObjInstance** cur = &allAllocations_;
     while (*cur) {
@@ -413,14 +425,24 @@ std::vector<VM::LocalVarView> VM::locals(size_t depthFromTop) const {
     return result;
 }
 
+std::vector<VM::StaticVarView> VM::staticVars() const {
+    std::vector<StaticVarView> result;
+    result.reserve(program_.statics.size());
+    for (size_t i = 0; i < program_.statics.size() && i < statics_.size(); ++i) {
+        result.push_back(StaticVarView{program_.statics[i].className, program_.statics[i].name, statics_[i]});
+    }
+    return result;
+}
+
 std::unordered_set<uintptr_t> VM::reachableAddresses() const {
     // Тот же обход, что в markValue(), но НЕ разрушающий (не трогает
     // флаги marked) и итеративный — глубокая цепочка объектов не переполнит
     // стек C++, а сама куча остаётся ровно как была.
     std::unordered_set<uintptr_t> seen;
     std::vector<const Value*> work;
-    work.reserve(stack_.size());
+    work.reserve(stack_.size() + statics_.size());
     for (const auto& v : stack_) work.push_back(&v);
+    for (const auto& v : statics_) work.push_back(&v);
     while (!work.empty()) {
         const Value* v = work.back();
         work.pop_back();
@@ -555,6 +577,15 @@ bool VM::startExecution() {
 
     frames_.push_back(Frame{&mainFn, 0, 0, 0});
     for (int i = 0; i < mainFn.localCount; i++) stack_.push_back(Value{std::monostate{}});
+
+    // Инициализаторы static-полей выполняются ДО main(): кладём их функцию поверх main — она отработает первой и
+    // вернётся в начало main (Return оставит её результат, null, над локалями main — безвредно, как у любого вызова).
+    if (program_.staticInitFunctionIndex >= 0) {
+        const CompiledFunction& initFn = program_.functions[static_cast<size_t>(program_.staticInitFunctionIndex)];
+        const size_t initBase = stack_.size();
+        for (int i = 0; i < initFn.localCount; i++) stack_.push_back(Value{std::monostate{}});
+        frames_.push_back(Frame{&initFn, 0, initBase, 0});
+    }
     return true;
 }
 
@@ -903,6 +934,17 @@ VM::StepOutcome VM::executeOneInstruction() {
                 }
                 ObjInstance* obj = std::get<ObjInstance*>(objVal);
                 push(obj->fields[static_cast<size_t>(instr.operand)]);
+                frame.ip++;
+                break;
+            }
+            case OpCode::LoadStatic: {
+                push(statics_[static_cast<size_t>(instr.operand)]);
+                frame.ip++;
+                break;
+            }
+            case OpCode::StoreStatic: {
+                // Значение остаётся на стеке: присваивание — выражение (как у StoreField).
+                statics_[static_cast<size_t>(instr.operand)] = peek();
                 frame.ip++;
                 break;
             }

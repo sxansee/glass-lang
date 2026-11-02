@@ -96,6 +96,7 @@
             <Word>floor</Word>
             <Word>ceil</Word>
             <Word>round</Word>
+            <Word>hex</Word>
             <Word>PI</Word>
             <Word>E</Word>
         </Keywords>

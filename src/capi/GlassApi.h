@@ -137,6 +137,12 @@ GLASS_API char* glass_get_call_stack_json(GlassSession* session);
 // проблема).
 GLASS_API char* glass_get_locals_json(GlassSession* session, int frame_depth);
 
+// [{"class": "Mold", "name": "поле", "value": <значение>}, ...] — static-поля программы в порядке
+// объявления (одни на весь mold, а не на кадр). <значение> — та же форма, что у glass_get_locals_json:
+// объект/массив — ссылка по адресу, данные — в glass_get_heap_json. До выполнения инициализаторов (они
+// идут перед main) поля имеют значения по умолчанию. Нет static-полей / NULL-сессия: [].
+GLASS_API char* glass_get_statics_json(GlassSession* session);
+
 // {"objects": [
 //    {"address": "АДРЕС", "reachable": true, "kind": "object",
 //     "class": "ИмяMold'а",

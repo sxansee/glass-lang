@@ -6,8 +6,10 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using Glass.Studio.Editor;
 using Glass.Studio.Examples;
+using Glass.Studio.Logging;
 using Glass.Studio.Services;
 using Glass.Studio.ViewModels;
+using ICSharpCode.AvalonEdit.Rendering;
 
 namespace Glass.Studio
 {
@@ -37,6 +39,7 @@ namespace Glass.Studio
             _viewModel.LogPanel = logPanel;
 
             _editorHost.TextEdited += (_, _) => _viewModel.NotifyTextChanged();
+            _editorHost.TextEdited += (_, _) => _viewModel.InfoCard.Close();   // текст изменился — подсказка по старым смещениям устарела
             _editorHost.BreakpointToggleRequested += _viewModel.ToggleBreakpoint;
             _editorHost.BreakpointsMoved += _viewModel.ReplaceBreakpoints;
             CodeEditor.TextArea.Caret.PositionChanged += (_, _) => UpdateCaretText();
@@ -101,6 +104,106 @@ namespace Glass.Studio
                 "Исходный код и документация: " + AppInfo.RepositoryUrl + "\n" +
                 "Журнал и прогресс курса: " + AppPaths.DataDirectory,
                 "О программе", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        // ------------------------------------------------------------------ карточка элемента кода
+
+        // Правая кнопка мыши над словом открывает карточку: что это за элемент, пример, ссылка на документацию и
+        // действия редактора (вместо стандартного контекстного меню). Отпускание кнопки, а не нажатие — как у меню.
+        private void OnEditorRightClick(object sender, MouseButtonEventArgs e)
+        {
+            var position = CodeEditor.GetPositionFromPoint(e.GetPosition(CodeEditor));
+            if (position == null) return;   // поле точек останова и пустое место вне текста — стандартное поведение
+            int offset = CodeEditor.Document.GetOffset(position.Value.Location);
+            // Без выделения курсор переезжает под указатель: «Вставить» и «Точка останова» относятся к этой строке.
+            if (CodeEditor.SelectionLength == 0) CodeEditor.CaretOffset = offset;
+            ShowCard(offset, e.GetPosition(CodeEditor));
+            e.Handled = true;
+        }
+
+        // F1 — та же карточка для элемента под курсором (клавиатурный путь: мышь не нужна). Esc закрывает её.
+        private void OnEditorPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape && CardPopup.IsOpen)
+            {
+                CloseCard();
+                e.Handled = true;
+                return;
+            }
+            if (e.Key != Key.F1) return;
+
+            var view = CodeEditor.TextArea.TextView;
+            Point caret = view.GetVisualPosition(CodeEditor.TextArea.Caret.Position, VisualYPosition.LineBottom) - view.ScrollOffset;
+            ShowCard(CodeEditor.CaretOffset, view.TranslatePoint(caret, CodeEditor));
+            e.Handled = true;
+        }
+
+        private void ShowCard(int offset, Point anchor)
+        {
+            CardPopup.PlacementTarget = CodeEditor;
+            CardPopup.HorizontalOffset = anchor.X;
+            CardPopup.VerticalOffset = anchor.Y + 4;
+            _viewModel.InfoCard.Open(CodeEditor.Text, offset);
+        }
+
+        private void CloseCard()
+        {
+            _viewModel.InfoCard.Close();
+            CodeEditor.Focus();
+        }
+
+        private void OnCardKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Escape) return;
+            CloseCard();
+            e.Handled = true;
+        }
+
+        private void OnCardOpenDocs(object sender, RoutedEventArgs e)
+        {
+            string? url = _viewModel.InfoCard.DocUrl;
+            if (url != null) AppServices.OpenUrl(url);
+            CloseCard();
+        }
+
+        private void OnCardCopyExample(object sender, RoutedEventArgs e)
+        {
+            string example = _viewModel.InfoCard.Example;
+            CloseCard();
+            if (example.Length == 0) return;
+            try
+            {
+                Clipboard.SetText(example);
+            }
+            catch (Exception ex)
+            {
+                // Буфер обмена мог быть занят другой программой — это не повод ронять IDE.
+                AppServices.Log.Error("Редактор", "Не удалось скопировать пример в буфер обмена", ex);
+            }
+        }
+
+        private void OnCardCut(object sender, RoutedEventArgs e)
+        {
+            CloseCard();
+            CodeEditor.Cut();
+        }
+
+        private void OnCardCopy(object sender, RoutedEventArgs e)
+        {
+            CloseCard();
+            CodeEditor.Copy();
+        }
+
+        private void OnCardPaste(object sender, RoutedEventArgs e)
+        {
+            CloseCard();
+            CodeEditor.Paste();
+        }
+
+        private void OnCardToggleBreakpoint(object sender, RoutedEventArgs e)
+        {
+            CloseCard();
+            _viewModel.ToggleBreakpointCommand.Execute(null);   // строка — под курсором: при правой кнопке он уже переехал
         }
 
         private void OnOutputChanged(object sender, TextChangedEventArgs e)

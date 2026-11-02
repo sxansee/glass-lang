@@ -31,6 +31,20 @@ namespace Glass.Studio.Models
             return ParseNamedValues(doc.RootElement);
         }
 
+        public static IReadOnlyList<StaticVariable> ParseStatics(string json)
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            var result = new List<StaticVariable>();
+            foreach (JsonElement item in doc.RootElement.EnumerateArray())
+            {
+                result.Add(new StaticVariable(
+                    item.GetProperty("class").GetString() ?? "",
+                    item.GetProperty("name").GetString() ?? "",
+                    ParseValue(item.GetProperty("value"))));
+            }
+            return result;
+        }
+
         public static HeapSnapshot ParseHeap(string json)
         {
             using JsonDocument doc = JsonDocument.Parse(json);

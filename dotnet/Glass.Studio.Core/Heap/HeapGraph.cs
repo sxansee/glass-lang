@@ -203,8 +203,10 @@ namespace Glass.Studio.Heap
         /// <param name="frames">Локальные переменные ВСЕХ фреймов — источник корней.</param>
         /// <param name="previous">Снимок прошлой паузы (для подсветки нового/изменённого) или null.</param>
         /// <param name="selectedAddress">Выбранный узел, чтобы выделение пережило перестроение.</param>
+        /// <param name="statics">static-поля: тоже корни (ссылочные), отдельной группой после кадров. null — их нет.</param>
         public static HeapGraphModel Build(HeapSnapshot snapshot, IReadOnlyList<FrameLocals> frames,
-                                           HeapSnapshot? previous, string? selectedAddress)
+                                           HeapSnapshot? previous, string? selectedAddress,
+                                           IReadOnlyList<StaticVariable>? statics = null)
         {
             var byAddress = new Dictionary<string, HeapObject>();
             foreach (HeapObject o in snapshot.Objects) byAddress.TryAdd(o.Address, o);
@@ -225,6 +227,18 @@ namespace Glass.Studio.Heap
                     if (local.Value.IsReference && byAddress.ContainsKey(local.Value.Address!))
                     {
                         roots.Add((frame.Function + " · " + local.Name, frame.Function, local.Value.Address!, frame.Depth));
+                    }
+                }
+            }
+
+            // static-поля — корни, общие для всей программы: отдельная группа под кадрами (глубина вне диапазона кадров).
+            if (statics != null)
+            {
+                foreach (StaticVariable field in statics)
+                {
+                    if (field.Value.IsReference && byAddress.ContainsKey(field.Value.Address!))
+                    {
+                        roots.Add(("static · " + field.QualifiedName, "static", field.Value.Address!, int.MaxValue));
                     }
                 }
             }

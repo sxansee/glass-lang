@@ -18,6 +18,7 @@ namespace Glass.Studio.Tests
             Add("граф: мусор — отдельная колонка, достижимость от VM", Garbage);
             Add("граф: новое и изменённое с прошлой паузы", Diff);
             Add("граф: лимиты — много узлов, длинный массив", Limits);
+            Add("граф: static-поля — корни отдельной группы", StaticRoots);
             Add("граф: выделение узла подсвечивает его рёбра", Selection);
             Add("граф: геометрия — узлы не перекрываются и лежат внутри холста", Geometry);
             Add("граф: длинный список (200 звеньев) — быстро и без переполнения стека", LongList);
@@ -162,6 +163,38 @@ namespace Glass.Studio.Tests
             HeapGraphModel big = HeapGraphBuilder.Build(many, new[] { Frame(rootsLocals) }, null, null);
             CheckEqual(HeapMetrics.MaxNodes, big.Nodes.Count, "нарисовано не больше MaxNodes");
             CheckEqual(40, big.HiddenNodeCount, "остальные посчитаны как скрытые");
+        }
+
+        private static void StaticRoots()
+        {
+            // Объект держит только static-поле: он не мусор, у него есть корень «static · Mold.поле» и ребро от него.
+            var heap = new HeapSnapshot(new[] { Node("1", 10, GlassValue.Null) });
+            var statics = new[]
+            {
+                new StaticVariable("Registry", "item", Ref("1")),
+                new StaticVariable("Registry", "count", GlassValue.FromInt(7)),   // не ссылка — корнем не становится
+            };
+            HeapGraphModel g = HeapGraphBuilder.Build(heap, Array.Empty<FrameLocals>(), null, null, statics);
+            CheckEqual(1, g.Roots.Count, "корень один — ссылочное static-поле");
+            CheckEqual("static · Registry.item", g.Roots[0].Label, "подпись корня");
+            CheckEqual("static", g.Roots[0].FrameName, "группа static");
+            CheckEqual(1, g.Nodes.Count, "объект нарисован");
+            CheckEqual(0, g.GarbageCount, "объект достижим — не мусор");
+            CheckEqual(1, g.Edges.Count(e => e.IsFromRoot), "ребро от static-корня к объекту");
+
+            // Без static-полей объект с тем же снимком, если VM считает его недостижимым, — мусор (контрольный случай).
+            var dead = new HeapSnapshot(new[] { Node("1", 10, GlassValue.Null, reachable: false) });
+            CheckEqual(1, HeapGraphBuilder.Build(dead, Array.Empty<FrameLocals>(), null, null).GarbageCount, "без static-корня — мусор");
+
+            // Вместе с локальными: сначала кадры, затем отдельной группой static — ниже, с промежутком между группами.
+            var two = new HeapSnapshot(new[] { Node("1", 10, GlassValue.Null), Node("2", 20, GlassValue.Null) });
+            HeapGraphModel both = HeapGraphBuilder.Build(two, new[] { Frame(("p", Ref("2"))) }, null, null,
+                new[] { new StaticVariable("Registry", "item", Ref("1")) });
+            CheckEqual(2, both.Roots.Count, "локаль и static-поле");
+            CheckEqual("main · p", both.Roots[0].Label, "кадры идут первыми");
+            CheckEqual("static · Registry.item", both.Roots[1].Label, "static — после кадров");
+            Check(both.Roots[1].Y >= both.Roots[0].Y + HeapMetrics.RootChipHeight + HeapMetrics.RootGap + HeapMetrics.FrameGap - 0.001,
+                  "между группами корней — промежуток");
         }
 
         private static void Selection()

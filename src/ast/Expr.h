@@ -109,6 +109,11 @@ struct SuperExpr : Expr {
 struct IdentifierExpr : Expr {
     std::string name;
     std::vector<TypeNode> genericArgs;
+    // Заполняет BodyChecker. Непусто — идентификатор указывает на static-поле, объявленное в этом mold'е
+    // (компилятор берёт значение из статической области, а не из полей объекта).
+    std::string staticOwner;
+    // Заполняет BodyChecker. true — это имя mold'а в записи Mold.член (static-доступ), а не переменная.
+    bool isTypeName = false;
     void accept(ExprVisitor& v) override { v.visit(*this); }
 };
 
@@ -172,6 +177,9 @@ struct CallExpr : Expr {
 struct FieldAccessExpr : Expr {
     ExprPtr target;
     std::string name;
+    // Заполняет BodyChecker. Непусто — это Mold.член: static-поле или static-метод, объявленный в этом mold'е
+    // (target при этом не вычисляется: это имя типа, а не значение).
+    std::string staticOwner;
     void accept(ExprVisitor& v) override { v.visit(*this); }
 };
 

@@ -19,6 +19,7 @@
 #include "repl/Repl.h"
 #include "sema/BodyChecker.h"
 #include "sema/Sema.h"
+#include "util/Plural.h"
 #include "vm/VM.h"
 
 namespace {
@@ -69,7 +70,7 @@ int main(int argc, char** argv) {
     glass::Program program = parser.parseProgram();
 
     if (!parser.errors().empty()) {
-        std::cerr << parser.errors().size() << " ошибок разбора:\n";
+        std::cerr << glass::countWithWord(parser.errors().size(), "ошибка разбора", "ошибки разбора", "ошибок разбора") << ":\n";
         for (const auto& err : parser.errors()) std::cerr << "  " << err << "\n";
         return 1;
     }
@@ -79,7 +80,9 @@ int main(int argc, char** argv) {
     glass::Sema sema;
     auto semaErrors = sema.analyze(program);
     if (!semaErrors.empty()) {
-        std::cerr << semaErrors.size() << " семантических ошибок (декларации):\n";
+        std::cerr << glass::countWithWord(semaErrors.size(), "семантическая ошибка (декларации)", "семантические ошибки (декларации)",
+                                          "семантических ошибок (декларации)")
+                  << ":\n";
         for (const auto& err : semaErrors) std::cerr << "  " << err << "\n";
         return 1;
     }
@@ -87,7 +90,9 @@ int main(int argc, char** argv) {
     glass::BodyChecker bodyChecker(sema);
     auto bodyErrors = bodyChecker.checkProgram(program);
     if (!bodyErrors.empty()) {
-        std::cerr << bodyErrors.size() << " ошибок типизации (тела функций):\n";
+        std::cerr << glass::countWithWord(bodyErrors.size(), "ошибка типизации (тела функций)", "ошибки типизации (тела функций)",
+                                          "ошибок типизации (тела функций)")
+                  << ":\n";
         for (const auto& err : bodyErrors) std::cerr << "  " << err << "\n";
         return 1;
     }

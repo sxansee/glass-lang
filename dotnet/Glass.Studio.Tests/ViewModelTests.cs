@@ -36,6 +36,7 @@ namespace Glass.Studio.Tests
             Add("IDE: повторные запуски и закрытие сессии", Restart);
             Add("IDE: куча остаётся на экране после нормального завершения", HeapAfterFinish);
             Add("IDE: сводка кучи и склонения", HeapSummary);
+            Add("IDE: static-поля — в панели переменных и в схеме кучи", StaticFieldsInPanels);
             Add("IDE: меню примеров и перенос точек останова", MenuAndBreakpointMoves);
         }
 
@@ -536,6 +537,39 @@ namespace Glass.Studio.Tests
             b.Vm.ReplaceBreakpoints(new[] { 10 });
             await b.Vm.StartOrContinueAsync();
             CheckEqual(10, b.Editor.ExecutionLine, "остановились на сдвинутой строке");
+        }
+
+        private static async Task StaticFieldsInPanels()
+        {
+            var h = new Harness(SessionTests.StaticsSource);
+            h.Vm.ToggleBreakpoint(10);
+            await h.Vm.StartOrContinueAsync();
+            CheckEqual(IdeState.Paused, h.Vm.State, "остановились внутри probe");
+
+            // В панели переменных после локальных переменных кадра идут static-поля — с пометкой static в колонке «Тип».
+            LocalItem count = h.Vm.Locals.First(l => l.Name == "Registry.count");
+            Check(count.IsStatic, "это static-поле");
+            CheckEqual("static int", count.TypeText, "тип с пометкой");
+            CheckEqual("7", count.ValueText, "значение");
+            LocalItem item = h.Vm.Locals.First(l => l.Name == "Registry.item");
+            CheckEqual("static Box", item.TypeText, "ссылочное static-поле: тип — mold");
+            Check(item.IsReference && item.Address != null, "ссылка на объект кучи");
+
+            // Они общие для всех кадров: при выборе main (вызывающего кадра) никуда не пропадают.
+            h.Vm.SelectedFrame = h.Vm.CallStack[1];
+            Check(h.Vm.Locals.Any(l => l.Name == "Registry.count"), "static-поле видно и в кадре main");
+            h.Vm.SelectedFrame = h.Vm.CallStack[0];
+
+            // На схеме кучи объект, который держит только static-поле, — достижим, с корнем «static · Registry.item».
+            Check(h.Vm.HeapGraph.Roots.Any(r => r.Label == "static · Registry.item"), "корень static на схеме");
+            CheckEqual(0, h.Vm.HeapGraph.GarbageCount, "объект не мусор");
+
+            // Клик по строке static-поля выделяет объект на схеме — как у обычной ссылочной переменной.
+            h.Vm.SelectedLocal = h.Vm.Locals.First(l => l.Name == "Registry.item");
+            Check(h.Vm.HeapGraph.FindNode(item.Address)!.IsSelected, "узел выделен");
+
+            await h.Vm.StartOrContinueAsync();
+            CheckEqual(IdeState.Finished, h.Vm.State, "дошли до конца");
         }
 
         private static async Task HeapSummary()

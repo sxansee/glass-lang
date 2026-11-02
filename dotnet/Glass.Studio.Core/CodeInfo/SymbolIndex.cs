@@ -362,7 +362,7 @@ namespace Glass.Studio.CodeInfo
                 return text switch
                 {
                     "len" or "int" or "floor" or "ceil" or "round" => "int",
-                    "str" or "string" => "string",
+                    "str" or "string" or "hex" => "string",
                     "double" or "sqrt" or "pow" => "double",
                     "bool" => "bool",
                     "range" => "[int]",
