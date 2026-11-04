@@ -137,6 +137,11 @@ GLASS_API char* glass_get_call_stack_json(GlassSession* session);
 // проблема).
 GLASS_API char* glass_get_locals_json(GlassSession* session, int frame_depth);
 
+// Проверка целостности сборки: NULL — все части библиотеки собраны по одним и тем же заголовкам. Иначе — сообщение
+// (освободить glass_free_string), что часть объектных файлов осталась от прежней версии и проект нужно пересобрать
+// целиком. glass_compile делает ту же проверку сам и возвращает это сообщение как ошибку компиляции.
+GLASS_API char* glass_check_build(void);
+
 // [{"class": "Mold", "name": "поле", "value": <значение>}, ...] — static-поля программы в порядке
 // объявления (одни на весь mold, а не на кадр). <значение> — та же форма, что у glass_get_locals_json:
 // объект/массив — ссылка по адресу, данные — в glass_get_heap_json. До выполнения инициализаторов (они

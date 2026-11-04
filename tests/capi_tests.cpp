@@ -173,6 +173,18 @@ void test_locals_json_shape() {
     glass_session_free(s);
 }
 
+void test_build_consistency_check_passes_on_a_clean_build() {
+    // Части библиотеки собраны по одним и тем же заголовкам: проверка целостности молчит (NULL), а компиляция работает.
+    char* message = glass_check_build();
+    CHECK(message == nullptr);
+    if (message) glass_free_string(message);
+    char* error = nullptr;
+    GlassSession* session = glass_compile("fn main() { print(1); }", &error);
+    CHECK(session != nullptr);
+    if (error) glass_free_string(error);
+    if (session) glass_session_free(session);
+}
+
 void test_statics_json_lists_static_fields() {
     std::string src =
         "mold Box {\n"                                      // 1
@@ -681,6 +693,7 @@ int main() {
 
     test_call_stack_json_shape();
     test_locals_json_shape();
+    test_build_consistency_check_passes_on_a_clean_build();
     test_statics_json_lists_static_fields();
     test_statics_json_is_empty_without_statics();
     test_heap_json_matches_local_reference();

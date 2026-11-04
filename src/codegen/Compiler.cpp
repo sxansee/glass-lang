@@ -1,4 +1,6 @@
 #include "../bytecode/Builtins.h"
+#include "../ast/AstLayout.h"
+#include "../bytecode/BytecodeLayout.h"
 #include "Compiler.h"
 
 #include <functional>
@@ -1204,3 +1206,7 @@ void Compiler::visit(ExprStmt& s) {
 void Compiler::visit(EmptyStmt&) {}
 
 } // namespace glass
+
+// Отпечаток раскладки структур для сверки частей сборки (util/LayoutCheck.h).
+GLASS_DEFINE_AST_LAYOUT(compilerAstLayout)
+GLASS_DEFINE_BYTECODE_LAYOUT(compilerBytecodeLayout)

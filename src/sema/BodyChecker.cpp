@@ -1,4 +1,5 @@
 #include "BodyChecker.h"
+#include "../ast/AstLayout.h"
 
 #include "../ast/Type.h"
 #include "../bytecode/Builtins.h"
@@ -1499,3 +1500,6 @@ std::vector<std::string> BodyChecker::checkProgram(Program& program) {
 }
 
 } // namespace glass
+
+// Отпечаток раскладки структур для сверки частей сборки (util/LayoutCheck.h).
+GLASS_DEFINE_AST_LAYOUT(checkerAstLayout)

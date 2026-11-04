@@ -15,6 +15,7 @@
 #include "../prelude/Prelude.h"
 #include "../sema/BodyChecker.h"
 #include "../sema/Sema.h"
+#include "../util/LayoutCheck.h"
 #include "../vm/VM.h"
 
 using namespace glass;
@@ -151,6 +152,12 @@ GLASS_API GlassSession* glass_compile(const char* source, char** error_out) {
         if (error_out) *error_out = allocateCString("glass_compile: source == NULL");
         return nullptr;
     }
+    // Части библиотеки собраны по одним и тем же заголовкам? Иначе — понятное сообщение, а не загадочное поведение.
+    std::string inconsistent = checkBuildConsistency();
+    if (!inconsistent.empty()) {
+        if (error_out) *error_out = allocateCString(inconsistent);
+        return nullptr;
+    }
 
     Lexer lexer(source);
     Parser parser(lexer.tokenize());
@@ -277,6 +284,11 @@ GLASS_API char* glass_get_call_stack_json(GlassSession* session) {
 GLASS_API char* glass_get_locals_json(GlassSession* session, int frame_depth) {
     if (!session || !session->vm || frame_depth < 0) return allocateCString("[]");
     return allocateCString(localsToJson(session->vm->locals(static_cast<size_t>(frame_depth))));
+}
+
+GLASS_API char* glass_check_build(void) {
+    std::string inconsistent = checkBuildConsistency();
+    return inconsistent.empty() ? nullptr : allocateCString(inconsistent);
 }
 
 GLASS_API char* glass_get_statics_json(GlassSession* session) {

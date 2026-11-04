@@ -1,4 +1,5 @@
 #include "Sema.h"
+#include "../ast/AstLayout.h"
 
 #include <functional>
 #include <unordered_set>
@@ -432,3 +433,6 @@ const std::vector<std::string>& Sema::getMoldFacets(const std::string& name) con
 }
 
 } // namespace glass
+
+// Отпечаток раскладки структур для сверки частей сборки (util/LayoutCheck.h).
+GLASS_DEFINE_AST_LAYOUT(semaAstLayout)

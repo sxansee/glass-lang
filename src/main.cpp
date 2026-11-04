@@ -19,6 +19,7 @@
 #include "repl/Repl.h"
 #include "sema/BodyChecker.h"
 #include "sema/Sema.h"
+#include "util/LayoutCheck.h"
 #include "util/Plural.h"
 #include "vm/VM.h"
 
@@ -46,6 +47,11 @@ int main(int argc, char** argv) {
         ~ConsoleUtf8() { SetConsoleOutputCP(output); SetConsoleCP(input); }
     } consoleUtf8;
 #endif
+    // Части glassc собраны по одним и тем же заголовкам? Иначе — понятное сообщение вместо непредсказуемого поведения.
+    if (std::string inconsistent = glass::checkBuildConsistency(); !inconsistent.empty()) {
+        std::cerr << inconsistent << "\n";
+        return 3;
+    }
     if (argc == 1) {
         return glass::runRepl();
     }

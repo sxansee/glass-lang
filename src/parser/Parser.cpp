@@ -1,4 +1,5 @@
 #include "Parser.h"
+#include "../ast/AstLayout.h"
 
 #include <sstream>
 
@@ -943,3 +944,6 @@ ExprPtr Parser::parsePrimary() {
 }
 
 } // namespace glass
+
+// Отпечаток раскладки структур для сверки частей сборки (util/LayoutCheck.h).
+GLASS_DEFINE_AST_LAYOUT(parserAstLayout)

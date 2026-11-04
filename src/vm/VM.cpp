@@ -1,4 +1,5 @@
 #include "../util/Utf8.h"
+#include "../bytecode/BytecodeLayout.h"
 #include "VM.h"
 
 #include <algorithm>
@@ -1242,3 +1243,6 @@ VM::StepOutcome VM::executeOneInstruction() {
 }
 
 } // namespace glass
+
+// Отпечаток раскладки структур для сверки частей сборки (util/LayoutCheck.h).
+GLASS_DEFINE_BYTECODE_LAYOUT(vmBytecodeLayout)
